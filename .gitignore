@@ -1,0 +1,7 @@
+includes/*.shp
+includes/*.dbf
+includes/*.shx
+includes/*.tif
+
+.metadata/
+bin/
