@@ -1,7 +1,13 @@
-includes/*.shp
-includes/*.dbf
-includes/*.shx
-includes/*.tif
+code/includes/*.shp
+code/includes/*.dbf
+code/includes/*.shx
+code/includes/*.prj
+code/includes/*.tif
+code/includes/*.cpg
+code/includes/*.qmd
 
 .metadata/
+.cache/
 bin/
+*.built_in_models_*
+*.gama_application_workspace*
