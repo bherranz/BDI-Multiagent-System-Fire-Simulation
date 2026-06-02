@@ -5,9 +5,13 @@ code/includes/*.prj
 code/includes/*.tif
 code/includes/*.cpg
 code/includes/*.qmd
+code/.project
+code/.settings/
 
+mv
 .metadata/
 .cache/
 bin/
+Unclassified Models/
 *.built_in_models_*
 *.gama_application_workspace*
