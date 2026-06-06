@@ -6,6 +6,33 @@
 model GredosParameters
 
 global {
+    // --- MULTI-AGENT ARCHITECTURE MODE ---
+    bool is_centralized_model <- true;
+
+    // --- RECONNAISSANCE DRONE PARAMETERS ---
+    int drone_fleet_size <- 15;          // Number of active scouting drones
+    float drone_speed <- 120.0;         // Speed in meters/cycle (air flight)
+    float drone_max_fuel <- 400.0;      // Maximum flight autonomy (cycles)
+    float drone_vision_range <- 400.0;  // Scouting radius in meters (increased for faster detection)
+    float drone_wind_tolerance <- 3.5;   // Max wind intensity for safe operation
+    float drone_altitude <- 150.0;      // Flight altitude in meters
+    
+    // --- GROUND FIREFIGHTER (BOMBERO TERRESTRE) PARAMETERS ---
+    int firefighter_fleet_size <- 5;            // Number of active ground units
+    float firefighter_speed <- 90.0;            // Base speed (slower than drones)
+    float firefighter_max_water <- 4000.0;      // Maximum water load (liters)
+    float firefighter_max_fatigue <- 100.0;     // Fatigue threshold
+    float firefighter_max_stress <- 100.0;      // Stress threshold (survival trigger)
+
+    // --- AERIAL FIREFIGHTER (BOMBERO AÉREO / HELICÓPTERO) PARAMETERS ---
+    int aerial_firefighter_fleet_size <- 2;    // Number of active helicopters
+    float aerial_firefighter_speed <- 150.0;   // Aerial speed (faster, less encumbered)
+    float aerial_firefighter_max_water <- 1500.0;     // Water capacity (reduced, from reservoirs)
+    float aerial_firefighter_max_fuel <- 500.0;       // Fuel autonomy (critical resource)
+    float aerial_firefighter_cruise_altitude <- 200.0; // Flight altitude above terrain
+    float aerial_firefighter_max_stress <- 100.0;     // Stress threshold
+    float aerial_firefighter_wind_tolerance <- 4.0;   // Max wind speed to operate
+
     // --- FIRE EVOLUTION PARAMETERS ---
     int cell_burn_duration <- 30;
     float epsilon_base <- 0.01;
@@ -19,8 +46,8 @@ global {
     string VEG_FIREBREAK <- "Cortafuegos";
 
     // --- FLAMMABILITY COEFFICIENTS ---
-    float COEF_HIGH <- 0.08;   // Dense forest
-    float COEF_MEDIUM <- 0.05; // Scrub and shrubs
+    float COEF_HIGH <- 0.08;   // Forest
+    float COEF_MEDIUM <- 0.05;  // Scrub and shrubs
     float COEF_LOW <- 0.03;    // Grasslands
     float COEF_NULL <- 0.00;   // Firewalls
     float COEF_BASE <- 0.04;   // Fallback
@@ -45,6 +72,5 @@ global {
     shape_file roads_file <- shape_file("../includes/roads.shp");
     shape_file fuel_file <- shape_file("../includes/fuel.shp");
     shape_file water_points_file <- shape_file("../includes/water_points.shp");
-    
     shape_file base_file <- shape_file("../includes/base.shp");
 }

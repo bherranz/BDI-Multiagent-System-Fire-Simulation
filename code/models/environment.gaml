@@ -31,7 +31,7 @@ grid terrain_cell file: dem_file {
         return (wind_alignment > 0) ? wind_alignment * wind_intensity * 0.05 : 0.0;
     }
 
-    reflex spread_fire when: is_burning {
+    reflex spread_fire when: is_burning and (every(2 #cycles)) {
         loop nb over: neighbors {
             if (!nb.is_burning and !nb.is_burned) {
                 float ignition_probability <- nb.fuel_factor
@@ -64,10 +64,10 @@ species fuel_zone {
     string vegetation_type;
     
     float get_flammability {
-        if (vegetation_type contains VEG_FOREST)   { return COEF_HIGH;   }
-        if (vegetation_type contains VEG_SHRUB or vegetation_type contains VEG_SCRUB) { return COEF_MEDIUM; }
-        if (vegetation_type contains VEG_HERB or vegetation_type contains VEG_GRASS)  { return COEF_LOW;    }
-        if (vegetation_type contains VEG_FIREBREAK){ return COEF_NULL;   }
+        if (vegetation_type contains VEG_FOREST) { return COEF_HIGH; }
+        if ((vegetation_type contains VEG_SHRUB) or (vegetation_type contains VEG_SCRUB)) { return COEF_MEDIUM; }
+        if ((vegetation_type contains VEG_HERB) or (vegetation_type contains VEG_GRASS)) { return COEF_LOW; }
+        if (vegetation_type contains VEG_FIREBREAK) { return COEF_NULL; }
         return COEF_BASE;
     }
 
