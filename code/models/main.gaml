@@ -28,7 +28,6 @@ global {
     }
 
     // Initialization actions
-
     action create_gis_agents {
         create fuel_zone from: fuel_file with: [vegetation_type::read("DesTipEstr")];
 
@@ -62,7 +61,6 @@ global {
 		 		}
 		    }
         }
-
         
         // Drones are spawned across random locations on the map to maximize early fire detection coverage
         create recon_drone number: drone_fleet_size {
