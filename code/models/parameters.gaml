@@ -32,6 +32,8 @@ global {
     float aerial_firefighter_cruise_altitude <- 200.0; // Flight altitude above terrain
     float aerial_firefighter_max_stress <- 100.0;     // Stress threshold
     float aerial_firefighter_wind_tolerance <- 4.0;   // Max wind speed to operate
+    
+    int base_capacity <- 2;
 
     // --- FIRE EVOLUTION PARAMETERS ---
     int cell_burn_duration <- 30;

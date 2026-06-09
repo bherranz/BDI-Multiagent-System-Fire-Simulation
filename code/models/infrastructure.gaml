@@ -29,4 +29,5 @@ species water_point {
 
 species logistics_base {
     aspect default { draw square(150) color: COLOR_BASE border: #black; }
+    int capacidad <- base_capacity;
 }

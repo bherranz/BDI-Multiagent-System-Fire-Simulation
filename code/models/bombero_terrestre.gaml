@@ -1,6 +1,6 @@
 /**
-* Name: Ground Firefighter Agent (Bombero Terrestre)
-* Description: BDI cognitive definition for the ground operative unit.
+* Name: Agente Bombero Terrestre
+* Description: BDI cognitivo para la unidad operativa terrestre.
 */
 
 model GredosBomberoTerrestre
@@ -10,31 +10,19 @@ import "recon_drone.gaml"
 import "environment.gaml"
 import "infrastructure.gaml"
 import "main.gaml"
+import "agente_operativo.gaml"
 
-species bombero_terrestre control: simple_bdi skills: [moving] {
+species bombero_terrestre parent: agente_operativo {
 
-    // --- ONTOLOGICAL ATTRIBUTES ---
-    float water_load        <- firefighter_max_water;
-    float stress_level      <- 0.0;
-    float fatigue_level     <- 0.0;
-    string operational_state <- "Disponible"; // Disponible | Extinguiendo | Recargando | Retirada
-    float last_reported_progress <- -1.0;
+    // --- ATRIBUTOS ONTOLÓGICOS ESPECÍFICOS ---
+    float nivel_estres      <- 0.0;
+    float nivel_cansancio   <- 0.0;
+    path current_path <- nil;
+    point last_destination <- nil;
+    bool log_carretera <- false; // diagnóstico: avisa una vez al circular por carretera (borrable)
 
-    // Target assigned by Coordinator (Protocol 2)
-    point assigned_target_location <- nil;
-    // Referencia para calcular progreso real (Protocolo 3)
-	int initial_fire_count <- 0;
-	// Mapa local de creencias sobre focos (Protocolo 3 - Modelo Descentralizado)
-	map<point, string> known_fires_local <- map([]);
-	bool reinforcement_requested <- false; // Evita spam del Protocolo 4
-	bool withdrawal_notified <- false;     // Evita el spam del Protocolo 5
-	bool emergency_notified <- false;
-
-    // --- BDI PREDICATES ---
-    string EXTINGUISH_DESIRE <- "extinguish_fire";
-    string RECHARGE_DESIRE   <- "recharge_water";
-    string REST_DESIRE       <- "rest_recover";
-    string SURVIVAL_DESIRE   <- "self_protection";
+    // --- PREDICADOS BDI ESPECÍFICOS ---
+    string DESEO_DESCANSAR <- "descansar_recuperar";
 
     // --- VISUAL ASPECT ---
     aspect default {
@@ -44,520 +32,392 @@ species bombero_terrestre control: simple_bdi skills: [moving] {
     // --- INITIALISATION ---
     init {
         speed <- firefighter_speed;
-        water_load <- firefighter_max_water; 
+        carga_agua <- firefighter_max_water; 
     }
 
     // --- COGNITIVE ACTIONS ---
 
-    // Protocolo 2: Evaluación de misión y negociación BDI
-    action request_mission(point target_location) {
-        // Evaluate BDI state: water, stress, fatigue
-        float stress_margin <- firefighter_max_stress - stress_level;
-        float water_margin <- water_load - (firefighter_max_water * 0.15);
-        float fatigue_margin <- firefighter_max_fatigue - fatigue_level;
-
-        bool can_accept <- (water_margin > 0 and stress_margin > 10.0 and fatigue_margin > 10.0);
-
-        if (can_accept) {
-		    write "🟢 [Protocolo 2] Bombero [" + name + "]: AGREE — Aceptando misión en " + target_location;
-		    assigned_target_location <- target_location;
-		    geometry initial_zone <- circle(150.0) at_location target_location;
-		    initial_fire_count <- length((terrain_cell overlapping initial_zone) where (each.is_burning));
-		    do add_desire(predicate(EXTINGUISH_DESIRE), 4.0);
-		    reinforcement_requested <- false;
-		    // Registrar el foco como asignado solo si el agente acepta
-		    ask one_of(coordinador) {
-		        list<point> coincidentes <- assigned_fires where (each distance_to target_location < assignment_radius);
-		        if (empty(coincidentes)) {
-		            assigned_fires <- assigned_fires + [target_location];
-		        }
-		    }
-		    // Registrar belief focoAsignado para evitar redundancia en modelo descentralizado
-			if (!is_centralized_model) {
-			    do add_belief(predicate("foco_asignado", ["location"::target_location]));
-			}
-		} else {
-            write "🔴 [Protocolo 2] Bombero [" + name + "]: REFUSE — No puede aceptar (agua: " + int(water_load) + "L, estrés: " + int(stress_level) + ", fatiga: " + int(fatigue_level) + ")";
-        }
-    }
-    
-    // Protocolo 2 CNP: calcular y devolver coste estimado para una puja
-	action calculate_bid(point target_location) type: float {
-	    // Coste base = distancia al foco
-	    float distance_cost <- location distance_to target_location;
-	    // Penalización por recursos bajos (menos agua = peor candidato)
-	    float water_penalty <- (1.0 - (water_load / firefighter_max_water)) * 5000.0;
-	    // Penalización por estrés y fatiga acumulados
-	    float condition_penalty <- (stress_level + fatigue_level) * 50.0;
-	    // Unidades no disponibles no pujan (coste infinito)
-	    if (operational_state != "Disponible") {
-	        return #max_float;
-	    }
-	    return distance_cost + water_penalty + condition_penalty;
+    // Sobrescritura de la función virtual para el Protocolo 2
+    action calcular_penalizacion_recursos type: float {
+	    float penalizacion_agua <- (1.0 - (carga_agua / firefighter_max_water)) * 5000.0;
+	    float penalizacion_condicion <- (nivel_estres + nivel_cansancio) * 50.0;
+	    return penalizacion_agua + penalizacion_condicion;
 	}
-    
-    // Protocolo 3: Informe de estado y progreso periódico
+
+    // Protocolo 2: Evaluación de misión y negociación BDI
+    action puede_aceptar_mision type: bool {
+	    float margen_estres <- firefighter_max_stress - nivel_estres;
+	    float margen_agua   <- carga_agua - (firefighter_max_water * 0.15);
+	    float margen_fatiga <- firefighter_max_fatigue - nivel_cansancio;
+	    if (!(margen_agua > 0 and margen_estres > 10.0 and margen_fatiga > 10.0)) {
+	        write "🔴 [Protocolo 2] Bombero [" + name + "]: REFUSE — (agua: " + int(carga_agua) + "L, estrés: " + int(nivel_estres) + ", fatiga: " + int(nivel_cansancio) + ")";
+	        return false;
+	    }
+	    return true;
+	}
+
+    // Protocolo 3: Informe de estado y progreso periódico optimizado
     action report_status_to_coordinator {
-	    geometry mission_zone <- circle(150.0) at_location assigned_target_location;
+        geometry mission_zone <- circle(150.0) at_location foco_asignado;
         list<terrain_cell> nearby_fires <- (terrain_cell overlapping mission_zone) where (each.is_burning);
         
         string fire_state <- empty(nearby_fires) ? "controlado" : "activo";
         int current_fire_count <- length(nearby_fires);
 
-        float progress <- (initial_fire_count > 0)
-            ? max(0.0, min(100.0, (1.0 - (float(current_fire_count) / float(initial_fire_count))) * 100.0))
+        float progress <- (focos_iniciales > 0)
+            ? max(0.0, min(100.0, (1.0 - (float(current_fire_count) / float(focos_iniciales))) * 100.0))
             : 100.0;
             
-        if (abs(progress - last_reported_progress) >= 5.0 or progress = 100.0) {
-            last_reported_progress <- progress;
+        if (abs(progress - progreso_ultimo_reporte) >= 5.0 or progress = 100.0) {
+            progreso_ultimo_reporte <- progress;
             
             write "📊 [Protocolo 3] Bombero [" + name + "]: Inform(focoActualizado(estado=" + fire_state
-                + ", progreso=" + int(progress) + "%, agua=" + int(water_load) + "L, estrés=" + int(stress_level) + "))";
+                + ", progreso=" + int(progress) + "%, agua=" + int(carga_agua) + "L, estrés=" + int(nivel_estres) + "))";
                 
             if (is_centralized_model) {
                 ask one_of(coordinador) {
-                    do receive_status_update(myself, myself.assigned_target_location, fire_state, progress, myself.water_load, myself.stress_level);
+                    do receive_status_update(myself, myself.foco_asignado, fire_state, progress, myself.carga_agua, myself.nivel_estres);
                 }
             } else {
                 float broadcast_range <- 500.0;
                 list<bombero_terrestre> nearby_peers <- bombero_terrestre where (each != self and each distance_to self < broadcast_range);
                 ask nearby_peers {
-                    do receive_status_broadcast(myself.assigned_target_location, fire_state, progress);
+                    do recibir_broadcast_estado(myself.foco_asignado, fire_state, progress);
                 }
             }
         }
-    }    
-	
-	// Protocolo 3 P2P: recibir actualización de estado de un par
-	action receive_status_broadcast(point fire_location, string fire_state, float progress) {
-	    known_fires_local[fire_location] <- fire_state;
-	    write "📡 [Protocolo 3 - P2P] Bombero [" + name + "]: Sincroniza foco "
-	        + fire_location + " → " + fire_state + " (" + int(progress) + "%)";
-	}
+    }
 
-    // Protocolo 4: Petición de refuerzos cuando propagación > capacidad
+    // Protocolo 4: Petición de refuerzos
     action request_reinforcements {
-        if (reinforcement_requested) { return; }
+        if (refuerzos_pedidos) { return; } 
 
         geometry search_zone <- circle(200.0) at_location {location.x, location.y};
         list<terrain_cell> nearby_fires <- (terrain_cell overlapping search_zone) where (each.is_burning);
         float fire_count <- float(length(nearby_fires));
 
-        if (fire_count > 5.0 and water_load < firefighter_max_water * 0.5) {
-            write "⚠️ [Protocolo 4] Bombero [" + name + "]: Request(ayudar(foco=" + assigned_target_location + "))";
+        if (fire_count > 5.0 and carga_agua < firefighter_max_water * 0.5) {
+            write "⚠️ [Protocolo 4] Bombero [" + name + "]: Request(ayudar(foco=" + foco_asignado + "))";
             
             if (is_centralized_model) {
                 ask one_of(coordinador) {
-                    // Pasamos el foco al que ir, no la ubicación actual del bombero
-                    do receive_reinforcement_request(myself, myself.assigned_target_location, fire_count);
+                    do receive_reinforcement_request(myself, myself.foco_asignado, fire_count);
                 }
             } else {
-                // Modelo descentralizado: Pide ayuda a compañeros y helicópteros cercanos
                 float broadcast_range <- 500.0;
                 list<bombero_terrestre> nearby_ground <- bombero_terrestre where (each != self and each distance_to self < broadcast_range);
                 list<bombero_aereo> nearby_aerial <- bombero_aereo where (each distance_to self < broadcast_range);
                 
-                ask nearby_ground { do request_mission(myself.assigned_target_location); }
-                ask nearby_aerial { do request_mission(myself.assigned_target_location); }
+                ask nearby_ground { do request_mission(myself.foco_asignado); }
+                ask nearby_aerial { do request_mission(myself.foco_asignado); }
             }
-            reinforcement_requested <- true; // Marcamos que la ayuda ya está pedida
+            refuerzos_pedidos <- true;
         }
     }
-    
+
     // Protocolo 5: Notificación de retirada para recargar agua
     action notify_water_withdrawal {
-        if (assigned_target_location != nil) {
-            write "💧 [Protocolo 5] Bombero [" + name + "]: Inform(retiradaRecarga(foco=" + assigned_target_location + "))";
+        if (foco_asignado != nil) {
+            write "💧 [Protocolo 5] Bombero [" + name + "]: Inform(retiradaRecarga(foco=" + foco_asignado + "))";
             
             if (is_centralized_model) {
                 ask one_of(coordinador) {
-                    do receive_withdrawal_notification(myself, myself.assigned_target_location, "water_refill");
+                    do receive_withdrawal_notification(myself, myself.foco_asignado, "water_refill");
                 }
             } else {
-                // Modelo descentralizado: Broadcast a todos los pares (Bomberos y Drones)
                 float broadcast_range <- 600.0;
                 list<bombero_terrestre> nearby_ground <- bombero_terrestre where (each != self and each distance_to self < broadcast_range);
                 list<bombero_aereo> nearby_aerial <- bombero_aereo where (each distance_to self < broadcast_range);
                 list<recon_drone> nearby_drones <- recon_drone where (each distance_to self < broadcast_range);
+                
                 ask nearby_drones {
-                    write "📡 [Protocolo 5 - P2P] Dron [" + name + "]: Recibe aviso de retirada. Reevaluando sector " + myself.assigned_target_location;
-                    if (!(myself.assigned_target_location in patrol_route)) {
-                        patrol_route <- [myself.assigned_target_location] + patrol_route;
+                    if (!(myself.foco_asignado in patrol_route)) {
+                        patrol_route <- [myself.foco_asignado] + patrol_route;
                     }
                 }
-                // Verificar si el foco sigue activo antes de enviar relevo (evita misiones a focos extinguidos)
-				geometry target_zone <- circle(150.0) at_location assigned_target_location;
+                geometry target_zone <- circle(150.0) at_location foco_asignado;
 				bool fire_still_active <- !empty((terrain_cell overlapping target_zone) where (each.is_burning));
 				
 				if (fire_still_active) {
-				    ask nearby_ground { do request_mission(myself.assigned_target_location); }
-				    ask nearby_aerial { do request_mission(myself.assigned_target_location); }
+				    ask nearby_ground { do request_mission(myself.foco_asignado); }
+				    ask nearby_aerial { do request_mission(myself.foco_asignado); }
 				} else {
-				    write "ℹ️ [Protocolo 5 - P2P] Foco en " + assigned_target_location + " ya extinguido. No se envía relevo.";
+				    write "ℹ️ [Protocolo 5 - P2P] Foco ya extinguido. No se envía relevo.";
 				}
             }
         }
     }
-    
-    // Protocolo 8: Evacuación de emergencia por seguridad crítica
+
+    // Protocolo 8: Evacuación de emergencia
     action emergency_evacuation_protocol {
         write "🚨 [Protocolo 8] Bombero [" + name + "]: Inform(retiradaEmergencia(riesgo_crítico))";
-        operational_state <- "Retirada";
+        estado_operativo <- "Retirada";
         
-        if (assigned_target_location != nil) {
+        if (foco_asignado != nil) {
             if (is_centralized_model) {
                 ask one_of(coordinador) {
-                    do receive_emergency_evacuation(myself, myself.assigned_target_location, myself.stress_level);
+                    do receive_emergency_evacuation(myself, myself.foco_asignado, myself.nivel_estres);
                 }
             } else {
-                // Modelo descentralizado: Broadcast de emergencia a pares
                 float broadcast_range <- 600.0;
                 list<bombero_terrestre> nearby_ground <- bombero_terrestre where (each != self and each distance_to self < broadcast_range);
                 list<bombero_aereo> nearby_aerial <- bombero_aereo where (each distance_to self < broadcast_range);
                 list<recon_drone> nearby_drones <- recon_drone where (each distance_to self < broadcast_range);
                 
                 ask nearby_drones {
-                    if (!(myself.assigned_target_location in patrol_route)) {
-                        patrol_route <- [myself.assigned_target_location] + patrol_route;
+                    if (!(myself.foco_asignado in patrol_route)) {
+                        patrol_route <- [myself.foco_asignado] + patrol_route;
                     }
                 }
-                ask nearby_ground { do request_mission(myself.assigned_target_location); }
-                ask nearby_aerial { do request_mission(myself.assigned_target_location); }
+                ask nearby_ground { do request_mission(myself.foco_asignado); }
+                ask nearby_aerial { do request_mission(myself.foco_asignado); }
             }
         }
-    }
-    
-    // Protocolo 9: Notificación de misión completada
-    action notify_mission_completion {
-        point finished_target <- assigned_target_location;
-        write "✅ [Protocolo 9] Bombero [" + name + "]: Inform(misionCompletada(foco=" + finished_target + "))";
-        
-        if (is_centralized_model) {
-            ask one_of(coordinador) {
-                // Pasamos la ubicación exacta del foco apagado
-                do receive_mission_completion(myself, finished_target);
-            }
-        } else {
-            // Modelo descentralizado: Broadcast para que los drones limpien sus creencias
-            float broadcast_range <- 1500.0; 
-            list<recon_drone> nearby_drones <- recon_drone where (each distance_to self < broadcast_range);
-            ask nearby_drones {
-                do receive_mission_completion(finished_target);
-            }
-            do remove_belief(predicate("foco_asignado", ["location"::finished_target]));
-        }
-        // Limpieza del estado del agente
-        assigned_target_location <- nil;
-        operational_state <- "Disponible";
-        reinforcement_requested <- false;
-        withdrawal_notified <- false;
-        last_reported_progress <- -1.0;
-        
-        do remove_desire(predicate(EXTINGUISH_DESIRE));
     }
 
     // --- REFLEXES ---
-    
-    // Protocolo 3: Reportes periódicos de estado
-    reflex protocol_3_periodic_status when: operational_state = "Extinguiendo" and every(15 #cycles) {
+
+    // Protocolo 3: Reportes periódicos de estado (Optimizado)
+    reflex protocol_3_periodic_status when: estado_operativo = "Extinguiendo" and every(15 #cycles) {
         do report_status_to_coordinator;
     }
-    
+
     // Protocolo 4: Detectar necesidad de refuerzos
-    reflex protocol_4_check_reinforcements when: operational_state = "Extinguiendo" and (int(cycle) mod 7 = 0) {
+    reflex protocol_4_check_reinforcements when: estado_operativo = "Extinguiendo" and (int(cycle) mod 7 = 0) {
         do request_reinforcements;
     }
-    
-    reflex adjust_altitude_to_terrain {
-        terrain_cell current_cell <- terrain_cell(location);
-        if (current_cell != nil) {
-            location <- {location.x, location.y, current_cell.altitude + 20.0};
-            if (current_cell.has_road) {
-                speed <- firefighter_speed * 2.0;
-            } else {
-                terrain_cell steepest_nb <- current_cell.neighbors with_min_of (each.altitude);
-                float slope_delta <- (steepest_nb != nil)
-                    ? (current_cell.altitude - steepest_nb.altitude) * slope_influence_factor
-                    : 0.0;
-                speed <- max(3.0, (firefighter_speed * 0.6) - slope_delta * 50.0);
-            }
-        }
-    }
 
-    reflex debug_movement when: assigned_target_location != nil and operational_state = "Extinguiendo" {
-        float dist_to_target <- {location.x, location.y} distance_to assigned_target_location;
-    }
-
-    reflex evaluate_emotions {
-        if (operational_state = "Extinguiendo") {
-            fatigue_level <- fatigue_level + 0.2;
-            stress_level <- stress_level + 0.2;     // Add stress during active firefighting
-        } else if (operational_state = "Disponible" and fatigue_level > 0) {
-            fatigue_level <- fatigue_level - 0.15;
-        }
-
-        geometry safety_zone <- circle(100.0) at_location {location.x, location.y};
-        list<terrain_cell> nearby_fire <- (terrain_cell overlapping safety_zone) where (each.is_burning);
+    // Evaluate stress periodically instead of every cycle
+    reflex evaluate_emotions when: (estado_operativo = "Extinguiendo" or estado_operativo = "Disponible") and every(5 #cycles) {
+        geometry danger_zone <- circle(30.0) at_location {location.x, location.y};
+        list<terrain_cell> nearby_fire <- (terrain_cell overlapping danger_zone) where (each.is_burning);
 
         if (!empty(nearby_fire)) {
-            stress_level <- stress_level + (length(nearby_fire) * 0.3);  // INCREASED from 0.1
+            nivel_estres <- min(firefighter_max_stress, nivel_estres + (length(nearby_fire) * 0.5));
         } else {
-            stress_level <- max(0.0, stress_level - 0.5);
+            nivel_estres <- max(0.0, nivel_estres - 1.0);
         }
 
-        if (stress_level > firefighter_max_stress and !has_desire(predicate(SURVIVAL_DESIRE))) {
-            operational_state <- "Retirada";
-            do add_desire(predicate(SURVIVAL_DESIRE), 5.0);
-            write "🚨 Bombero [" + name + "]: CRITICAL STRESS (" + int(stress_level) + "). Initiating tactical retreat.";
+        if (estado_operativo != "Disponible") {
+            nivel_cansancio <- min(firefighter_max_fatigue, nivel_cansancio + 0.1);
         }
 
-        if (fatigue_level > firefighter_max_fatigue and !has_desire(predicate(REST_DESIRE))) {
-            do add_desire(predicate(REST_DESIRE), 3.0);
-            write "😴 Bombero [" + name + "]: EXHAUSTED (" + int(fatigue_level) + "). Requesting rest.";
+        // Critical stress protocol
+        if (nivel_estres > (firefighter_max_stress * 0.8) and !has_desire(predicate(DESEO_SUPERVIVENCIA))) {
+            do add_desire(predicate(DESEO_SUPERVIVENCIA), 6.0);
+            write "[Protocol 8] Bombero [" + name + "]: STRESS CRITICAL (" + int(nivel_estres) + "). Initiating retreat.";
         }
 
-        if (water_load <= (firefighter_max_water * 0.15) and !has_desire(predicate(RECHARGE_DESIRE))) {
-            operational_state <- "Recargando";
-            do remove_desire(predicate(EXTINGUISH_DESIRE)); // Soltamos el fuego
-            do add_desire(predicate(RECHARGE_DESIRE), 5.0); // Prioridad máxima
-            write "💧 Bombero [" + name + "]: Agua crítica (" + int(water_load) + "L). Heading to recharge.";
-        }
-    }
-
-    reflex avoid_fire_during_movement when: operational_state = "Extinguiendo" {
-        terrain_cell current_cell <- terrain_cell(location);
-        
-        // If currently on fire, MUST leave immediately
-        if (current_cell != nil and current_cell.is_burning) {
-            write "⚠️ ALERT Bombero [" + name + "]: ON FIRE! Evacuating!";
-            stress_level <- min(firefighter_max_stress, stress_level + 5.0); // Big stress spike
-            
-            // Move away from fire
-            geometry safe_zone <- circle(50.0) at_location {location.x, location.y};
-            list<terrain_cell> safe_cells <- (terrain_cell overlapping safe_zone) where (!each.is_burning);
-            
-            if (!empty(safe_cells)) {
-                point safe_location <- (safe_cells with_max_of (each distance_to current_cell)).location;
-                location <- {safe_location.x, safe_location.y, location.z};
-            }
-            return;
-        }
-    }
-
-    reflex opportunistic_extinguish when: water_load > 0 {
-        terrain_cell current_cell <- terrain_cell(location);
-        if (current_cell != nil and current_cell.is_burning) {
-            current_cell.is_burning <- false;
-            current_cell.is_burned <- true;
-            current_cell.color <- COLOR_BURNED;
-            water_load <- water_load - 5.0;
-            write "💧 Bombero [" + name + "]: Foco eliminado por el camino.";
-        }
-    }
-
-    // ---ALGORITMO HÍBRIDO DE NAVEGACIÓN ---
-    action move_hybrid(point target_pos) {
-        // Si estamos muy cerca del objetivo, ir directamente sin usar el grafo
-        float distance_to_target <- {location.x, location.y} distance_to target_pos;
-        
-        if (distance_to_target < 150.0) {
-            // Última milla: ir a pie directo al foco
-            do goto target: {target_pos.x, target_pos.y, location.z} speed: speed;
-        } else {
-            // Primera parte: navegar por carreteras
-            // Encuentra el nodo del grafo más cercano al objetivo
-            geometry closest_node_to_target <- road_network.vertices closest_to target_pos;
-            
-            if (closest_node_to_target != nil) {
-                point node_location <- closest_node_to_target.location;
-                float distance_to_node <- {location.x, location.y} distance_to {node_location.x, node_location.y};
-                
-                // Solo usar el grafo si el nodo está a más de 30m y nos acerca al objetivo
-                if (distance_to_node > 30.0 and {node_location.x, node_location.y} distance_to target_pos < distance_to_target) {
-                    // Navega usando la red vial hacia el nodo más cercano del objetivo
-                    do goto target: {node_location.x, node_location.y, location.z} on: road_network speed: speed;
-                } else {
-                    // Si el nodo no ayuda, ir directo
-                    do goto target: {target_pos.x, target_pos.y, location.z} speed: speed;
-                }
-            } else {
-                // Si no hay nodo en el grafo, ir directo
-                do goto target: {target_pos.x, target_pos.y, location.z} speed: speed;
-            }
+        // Critical water protocol
+        if (carga_agua <= (firefighter_max_water * 0.15) and !has_desire(predicate(DESEO_RECARGAR_AGUA))) {
+            estado_operativo <- "Recargando";
+            do remove_desire(predicate(DESEO_EXTINGUIR)); 
+            do add_desire(predicate(DESEO_RECARGAR_AGUA), 5.0); 
+            write "[Protocol 5] Bombero [" + name + "]: Water critical (" + int(carga_agua) + "L). Heading to recharge.";
         }
     }
 
     // --- COGNITIVE PLANS ---
 
-    plan tactical_retreat intention: predicate(SURVIVAL_DESIRE) {
-        // Ejecutar notificación solo 1 vez
-        if (!emergency_notified) {
+    plan tactical_retreat intention: predicate(DESEO_SUPERVIVENCIA) {
+        if (!emergencia_notificada) {
             do emergency_evacuation_protocol;
-            assigned_target_location <- nil;
-            emergency_notified <- true;
+            foco_asignado <- nil; 
+            emergencia_notificada <- true;
         }
 
         logistics_base safe_zone <- logistics_base with_min_of (each distance_to self);
         do move_hybrid(safe_zone.location);
 
         if ({location.x, location.y} distance_to {safe_zone.location.x, safe_zone.location.y} < 50.0) {
-            stress_level <- 0.0;
-            operational_state <- "Disponible";
-            emergency_notified <- false; // Reseteamos el semáforo
-            do remove_desire(predicate(SURVIVAL_DESIRE));
+            nivel_estres <- 0.0;
+            estado_operativo <- "Disponible";
+            emergencia_notificada <- false; 
+            do remove_desire(predicate(DESEO_SUPERVIVENCIA));
             write "Bombero [" + name + "]: Reached safe zone. Stress normalised.";
         }
     }
 
-	plan recharge_water intention: predicate(RECHARGE_DESIRE) {
-        // Protocolo 5: Notificar retirada para recarga
-        if (!withdrawal_notified) {
-            do notify_water_withdrawal;
-            withdrawal_notified <- true;
-        }
+    plan recharge_water intention: predicate(DESEO_RECARGAR_AGUA) {
+    if (!retirada_notificada) {
+        do notify_water_withdrawal;
+        retirada_notificada <- true;
+    }
+    
+    water_point nearest_water <- water_point with_min_of (each distance_to self);
+    if (nearest_water != nil) {
+        do move_hybrid(nearest_water.location);
         
-        water_point nearest_water <- water_point with_min_of (each distance_to self);
-        if (nearest_water != nil) {
-            do move_hybrid(nearest_water.location);
+        if ({location.x, location.y} distance_to {nearest_water.location.x, nearest_water.location.y} < 30.0) {
+            carga_agua <- firefighter_max_water;
+            retirada_notificada <- false;
+            do remove_desire(predicate(DESEO_RECARGAR_AGUA));
+            write "Bombero [" + name + "]: Depósito lleno.";
             
-            if ({location.x, location.y} distance_to {nearest_water.location.x, nearest_water.location.y} < 30.0) {
-                water_load <- firefighter_max_water;
-                operational_state <- "Disponible";
-                withdrawal_notified <- false;
-                assigned_target_location <- nil;
-                do remove_desire(predicate(RECHARGE_DESIRE));
-                write "Bombero [" + name + "]: Tank refilled.";
-            }
-        }
-    }
-
-    plan rest_recover intention: predicate(REST_DESIRE) {
-        operational_state <- "Disponible";
-        fatigue_level     <- fatigue_level - 1.0;
-
-        if (fatigue_level <= 0.0) {
-            fatigue_level <- 0.0;
-            do remove_desire(predicate(REST_DESIRE));
-            write "Bombero [" + name + "]: Fatigue recovered. Ready.";
-        }
-    }
-
-    plan extinguish_fire intention: predicate(EXTINGUISH_DESIRE) {
-        if (assigned_target_location = nil) {
-            do remove_desire(predicate(EXTINGUISH_DESIRE));
-            operational_state <- "Disponible";
-            return;
-        }
-
-        operational_state <- "Extinguiendo";
-        float distance_to_target <- {location.x, location.y} distance_to assigned_target_location;
-        
-        // Define extinction radius (area around firefighter where they can extinguish)
-        float extinction_radius <- 100.0;
-
-        // If still far from target, move closer
-        if (distance_to_target > extinction_radius) {
-            do move_toward_target_safely;
-        } else {
-            // Close enough! Search for fires in extinction radius and extinguish them
-            geometry extinction_zone <- circle(extinction_radius) at_location {location.x, location.y};
-            list<terrain_cell> fires_to_extinguish <- (terrain_cell overlapping extinction_zone) where (each.is_burning);
-
-            if (!empty(fires_to_extinguish)) {
-                // Apagar agresivamente los fuegos en el radio corto
-                loop fire_cell over: fires_to_extinguish {
-                    // Calcular el agua antes de intentar apagar
-                    float water_use <- 8.0 * (1.0 + (stress_level / firefighter_max_stress * 0.5));
-                    if (water_load >= water_use) {
-                        water_load <- water_load - water_use;
-                        fire_cell.is_burning <- false;
-                        fire_cell.is_burned  <- true;
-                        fire_cell.color      <- COLOR_BURNED;
-                    }
-                }
-                write "💧 Bombero [" + name + "]: Apagando. Agua: " + int(water_load) + "L";
-            } else {
-                // Solo hacemos el escaneo de 250m cuando el área inmediata está limpia
-                geometry extended_search <- circle(250.0) at_location {location.x, location.y};
-                list<terrain_cell> more_fires <- (terrain_cell overlapping extended_search) where (each.is_burning);
-
-                if (!empty(more_fires)) {
-                    assigned_target_location <- (more_fires with_min_of (each distance_to self)).location;
-                    // Resetear referencia de progreso para el nuevo foco
-                    geometry new_zone <- circle(150.0) at_location assigned_target_location;
-                    initial_fire_count <- length((terrain_cell overlapping new_zone) where (each.is_burning));
-                    write "Bombero [" + name + "]: Moviéndose al siguiente grupo de fuego en " + assigned_target_location;
+            // Retomar misión si el foco sigue activo
+            if (foco_asignado != nil) {
+                geometry check_zone <- circle(150.0) at_location foco_asignado;
+                bool still_burning <- !empty((terrain_cell overlapping check_zone) where (each.is_burning));
+                if (still_burning) {
+                    estado_operativo <- "Extinguiendo";
+                    focos_iniciales <- length((terrain_cell overlapping check_zone) where (each.is_burning));
+                    do add_desire(predicate(DESEO_EXTINGUIR), 4.0);
+                    write "Bombero [" + name + "]: Retomando misión en " + foco_asignado;
                 } else {
-                    write "Bombero [" + name + "]: Sector asegurado, no hay fuegos activos.";
-                    do notify_mission_completion;
+                    foco_asignado <- nil;
+                    estado_operativo <- "Disponible";
                 }
+            } else {
+                estado_operativo <- "Disponible";
             }
         }
     }
+}
 
-    // Helper action to move safely (don't traverse burning cells)
-    action move_toward_target_safely {
-        terrain_cell current_cell <- terrain_cell(location);
-        
-        // Check if standing on fire
-        if (current_cell != nil and current_cell.is_burning) {
-            write "⚠️ Bombero [" + name + "]: Standing on fire! Must move!";
-            stress_level <- min(firefighter_max_stress, stress_level + 3.0);
-            
-            // Move away from fire - find nearest safe cell
-            geometry escape_zone <- circle(50.0) at_location {location.x, location.y};
-            list<terrain_cell> safe_cells <- (terrain_cell overlapping escape_zone) where (!each.is_burning);
-            
-            if (!empty(safe_cells)) {
-                point safe_location <- (safe_cells with_max_of (each distance_to current_cell)).location;
-                location <- {safe_location.x, safe_location.y, location.z};
-            }
+    plan extinguish_fire intention: predicate(DESEO_EXTINGUIR) {
+        if (foco_asignado = nil) {
+            estado_operativo <- "Disponible";
+            do remove_desire(predicate(DESEO_EXTINGUIR));
             return;
         }
-        
-        // Normal movement toward target
-        point direction <- assigned_target_location - {location.x, location.y};
-        float norm <- sqrt(direction.x ^ 2 + direction.y ^ 2);
-        
-        if (norm > 0) {
-            point normalized_direction <- {direction.x / norm, direction.y / norm};
-            point next_location <- {location.x + (normalized_direction.x * speed), 
-                                   location.y + (normalized_direction.y * speed), 
-                                   location.z};
-            
-            // Check if next position is on fire - if so, find an alternate path
-            terrain_cell next_cell <- terrain_cell(next_location);
-            if (next_cell != nil and next_cell.is_burning) {
-                // Path blocked by fire - try to go around it
-                write "🔥 Bombero [" + name + "]: Fire detected ahead, finding alternate route.";
-                stress_level <- min(firefighter_max_stress, stress_level + 1.0);
-                
-                // Find 3 alternate paths and pick the safest
-                float angle_offset <- 45.0; // Try +/- 45 degrees
-                bool found_path <- false;
-                
-                loop offset over: [-angle_offset, angle_offset] {
-                    float new_angle <- (normalized_direction direction_to {0,0}) + offset;
-                    point alt_direction <- {cos(new_angle), sin(new_angle)};
-                    point alt_location <- {location.x + (alt_direction.x * speed),
-                                         location.y + (alt_direction.y * speed),
-                                         location.z};
-                    
-                    terrain_cell alt_cell <- terrain_cell(alt_location);
-                    if (alt_cell = nil or !alt_cell.is_burning) {
-                        location <- alt_location;
-                        found_path <- true;
-                        break;
-                    }
+    
+        estado_operativo <- "Extinguiendo";
+        float dist <- {location.x, location.y} distance_to {foco_asignado.x, foco_asignado.y};
+
+        // --- MODE 1 & 2: MOVEMENT ---
+        if (dist > 50.0) {
+            do move_hybrid(foco_asignado);
+            return;
+        }
+    
+        // --- MODE 3: WITHIN EXTINCTION RADIUS (<50m) ---
+        geometry extinction_zone <- circle(50.0) at_location {location.x, location.y};
+        list<terrain_cell> fires_to_extinguish <- (terrain_cell overlapping extinction_zone) where (each.is_burning);
+    
+        if (!empty(fires_to_extinguish)) {
+            loop fire_cell over: fires_to_extinguish {
+                float water_use <- 8.0 * (1.0 + (nivel_estres / firefighter_max_stress * 0.5));
+                if (carga_agua >= water_use) {
+                    carga_agua <- carga_agua - water_use;
+                    fire_cell.is_burning <- false;
+                    fire_cell.is_burned  <- true;
+                    fire_cell.color      <- COLOR_BURNED;
                 }
-                // If no alternate path, just skip this cycle
-                if (!found_path) {
-                    write "⚠️ Bombero [" + name + "]: Surrounded by fire, waiting for clearance.";
+            }
+            write "Bombero [" + name + "]: Extinguishing. Water: " + int(carga_agua) + "L";
+        } else {
+            geometry extended_search <- circle(250.0) at_location {location.x, location.y};
+            list<terrain_cell> more_fires <- (terrain_cell overlapping extended_search) where (each.is_burning);
+            if (!empty(more_fires)) {
+                foco_asignado <- (more_fires with_min_of (each distance_to self)).location;
+                geometry new_zone <- circle(150.0) at_location foco_asignado;
+                focos_iniciales <- length((terrain_cell overlapping new_zone) where (each.is_burning));
+                write "Bombero [" + name + "]: Moving to next fire cluster at " + foco_asignado;
+            } else {
+                write "Bombero [" + name + "]: Sector secured.";
+                do notify_mission_completion;
+            }
+        }
+    }
+    
+    // Eleva al agente sobre la superficie del DEM para una visualización 3D correcta.
+    action snap_to_terrain {
+        terrain_cell tc <- terrain_cell(location);
+        if (tc != nil) { location <- {location.x, location.y, tc.altitude + 2.0}; }
+    }
+
+    // Devuelve el nodo de la red TRANSITABLE (componente principal) más cercano al objetivo.
+    // Al ser una componente conexa, siempre es alcanzable por carretera desde cualquier otro nodo.
+    action road_access_point(point target_2d) type: point {
+        if (drivable_network = nil or empty(drivable_network.vertices)) { return nil; }
+        point n <- drivable_network.vertices closest_to target_2d;
+        return (n = nil) ? nil : {n.x, n.y, 0.0};
+    }
+
+    action move_hybrid(point target_dest) {
+        point loc_2d    <- {location.x, location.y, 0.0};
+        point target_2d <- {target_dest.x, target_dest.y, 0.0};
+        float dist_to_target <- loc_2d distance_to target_2d;
+        if (dist_to_target < 5.0) { return; }
+
+        bool  network_ok     <- (drivable_network != nil and !empty(drivable_network.edges));
+        float walk_threshold <- 50.0; // el último tramo hasta el foco siempre es a pie
+
+        // --- FASE A: NAVEGACIÓN POR CARRETERA (todo lo cerca que se pueda por carretera) ---
+        // Solo conducimos si: estamos lejos, y la carretera nos deja MÁS cerca del foco
+        // de lo que ya estamos a pie (si no, sería un rodeo inútil).
+        if (network_ok and dist_to_target > walk_threshold) {
+            point access <- road_access_point(target_2d);
+            float access_to_target <- (access = nil) ? 1e9 : (access distance_to target_2d);
+
+            if (access != nil and access_to_target < dist_to_target) {
+                // goto gestiona automáticamente entrar al grafo, circular por las aristas
+                // y salir por el punto más cercano al foco. Trabajamos en el plano 2D del grafo.
+                location <- {location.x, location.y, 0.0};
+                do goto target: target_2d on: drivable_network speed: speed * 1.2;
+                do snap_to_terrain;
+
+                if (!log_carretera) {
+                    write "🛣️ Bombero [" + name + "]: circulando por carretera hacia el foco.";
+                    log_carretera <- true; // log único; puedes borrar esta línea y el atributo
                 }
                 return;
             }
-            // Safe to move
-            location <- next_location;
         }
+
+        // Al salir del modo carretera, invalidamos la ruta cacheada.
+        last_destination <- nil;
+        current_path     <- nil;
+
+        // --- FASE B: A PIE (continúan andando: recta + evitación de fuego) ---
+        float current_speed <- speed;
+        terrain_cell current_cell <- terrain_cell(location);
+        if (current_cell != nil) {
+            float slope_penalty <- (current_cell.altitude > 0) ? 0.8 : 1.0;
+            float veg_penalty   <- (current_cell.fuel_factor > 0.05) ? 0.7 : 1.0;
+            current_speed <- speed * slope_penalty * veg_penalty;
+        }
+
+        point normalized_dir <- {
+            (target_dest.x - location.x) / dist_to_target,
+            (target_dest.y - location.y) / dist_to_target
+        };
+        point next_location <- {
+            location.x + (normalized_dir.x * current_speed),
+            location.y + (normalized_dir.y * current_speed),
+            location.z
+        };
+
+        // Protocolo de evitación táctica de celdas en llamas
+        terrain_cell next_cell <- terrain_cell(next_location);
+        if (next_cell != nil and next_cell.is_burning and dist_to_target > 60.0) {
+            write "Bombero [" + name + "]: Fire in route, searching alternative.";
+            nivel_estres <- min(firefighter_max_stress, nivel_estres + 1.0);
+
+            bool found_path <- false;
+            loop offset over: [-45.0, 45.0, -90.0, 90.0] {
+                float base_angle <- location direction_to target_dest;
+                float new_angle  <- base_angle + offset;
+                point alt_loc <- {
+                    location.x + cos(new_angle) * current_speed,
+                    location.y + sin(new_angle) * current_speed,
+                    location.z
+                };
+                terrain_cell alt_cell <- terrain_cell(alt_loc);
+                if (alt_cell != nil and !alt_cell.is_burning) {
+                    location <- alt_loc;
+                    found_path <- true;
+                    break;
+                }
+            }
+            if (!found_path) { write "Bombero [" + name + "]: Surrounded by fire, waiting."; }
+
+            do snap_to_terrain;
+            return;
+        }
+
+        if (dist_to_target <= 5.0) { return; }
+        location <- next_location;
+        do snap_to_terrain;
     }
 }
