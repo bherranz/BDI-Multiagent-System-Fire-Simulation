@@ -12,11 +12,12 @@ import "recon_drone.gaml"
 import "bombero_terrestre.gaml"
 import "bombero_aereo.gaml"
 import "coordinador.gaml"
+import "metrics.gaml"
 
 global {
     geometry shape <- envelope(dem_file);
     graph road_network;
-    graph drivable_network; // componente conexa principal: la red realmente transitable
+    graph drivable_network; // Red transitable
 
     init {
         write "Processing the map...";
@@ -66,7 +67,7 @@ global {
             }
         }
         
-        // Despliegue estratégico aleatorio de la flota de sensores aéreos (Drones)
+        // Despliegue estratégico aleatorio de la flota de drones
         create recon_drone number: drone_fleet_size {
             terrain_cell random_start_cell <- any(terrain_cell);
             float target_z <- random_start_cell.altitude + 100.0;
@@ -82,54 +83,44 @@ global {
         // Aplanamos las carreteras a 2D (z=0) para construir el grafo de navegación.
         list<geometry> road_geoms_2d <- (road as list) collect (line(each.shape.points collect ({each.x, each.y, 0.0})));
         
-        // clean_network es el operador idiomático de GAMA para preparar redes enrutables:
-        //   - tolerancia 3.0 m  -> suelda extremos casi coincidentes (huecos del GIS)
-        //   - split = true      -> parte las líneas en cada intersección (nodos limpios y conectados)
-        //   - keepMain = true   -> conserva solo la componente conexa principal (la red transitable)
-        // Esto evita el grafo degenerado que producía as_edge_graph(split_lines, tol).
+        // Limpiar el grafo para generar una red limpia
         list<geometry> clean_roads <- clean_network(road_geoms_2d, 3.0, true, true);
         
         road_network     <- as_edge_graph(clean_roads) with_shortest_path_algorithm #Dijkstra;
-        drivable_network <- road_network; // clean_network ya devolvió una única componente conexa
-        
-        // Log final en consola para verificar los resultados
-        write "--- AUDITORÍA DE RED ENRUTABLE ---";
-        write "Nodos: "   + length(road_network.vertices);
-        write "Aristas: " + length(road_network.edges);
-        write "Componentes conectadas: " + length(connected_components_of(road_network));
+        drivable_network <- road_network;
     }
 
     action ignite_fire {
-        ask one_of(terrain_cell) {
-            is_burning <- true;
-            color      <- COLOR_BURNING;
-        }
-    }
-}
-
-// --- GRAPHICAL USER INTERFACE ---
-experiment Fire_Simulation type: gui {
-    parameter "Centralized Model" var: is_centralized_model category: "Agent Architecture";
-    parameter "Scouting Drone Fleet Size"     var: drone_fleet_size min: 5 max: 20 category: "Agent Architecture";
-    parameter "Ground Firefighter Fleet Size" var: firefighter_fleet_size min: 2 max: 10 category: "Agent Architecture";
-    parameter "Aerial Firefighter Fleet Size" var: aerial_firefighter_fleet_size min: 1 max: 5 category: "Agent Architecture";
-    parameter "Epsilon (uncertainty margin)"  var: epsilon_base       min: 0.0  max: 0.1   category: "Fire Model";
-    parameter "Cell Burn Duration (Cycles)"   var: cell_burn_duration min: 5    max: 100   category: "Fire Model";
-    parameter "Wind Direction (Degrees)"      var: wind_direction     min: 0.0  max: 360.0 category: "Wind Model";
-    parameter "Wind Intensity"                var: wind_intensity     min: 0.5  max: 5.0   category: "Wind Model";
-    parameter "Slope Influence Factor"        var: slope_influence_factor min: 0.001 max: 0.02 category: "Terrain Model";
-	parameter "Base capacity (slots)" var: base_capacity min: 1 max: 5 category: "Agent Architecture";
-
-    output {
-        display "Gredos 3D Map" type: opengl {
-            grid terrain_cell elevation: altitude triangulation: true;
-            species road;
-            species water_point;
-            species logistics_base;
-            species recon_drone;
-            species bombero_terrestre;
-            species bombero_aereo;
-            species coordinador;
-        }
-    }
+	    logistics_base base <- one_of(logistics_base);
+	    float max_distance <- 3000.0; // radio máximo en metros desde la base
+	
+	    // Buscar celda con combustible alto dentro del radio
+	    list<terrain_cell> candidates <- terrain_cell where (
+	        each.fuel_factor > 0.0 and
+	        !each.is_burned and
+	        each distance_to base < max_distance
+	    );
+	
+	    terrain_cell ignition_cell <- empty(candidates)
+	        ? nil
+	        : (candidates with_max_of (each.fuel_factor));
+	
+	    if (ignition_cell != nil) {
+	        ask ignition_cell {
+	            is_burning <- true;
+	            color      <- COLOR_BURNING;
+	        }
+	        write "Incendio iniciado en " + ignition_cell.location
+	            + " (combustible: " + ignition_cell.fuel_factor
+	            + ", distancia a base: " + int(ignition_cell distance_to base) + "m)";
+	    } else {
+	        write "No se encontró celda válida en radio de " + max_distance + "m. Ampliando búsqueda...";
+	        // Fallback sin restricción de distancia
+	        ignition_cell <- (terrain_cell where (each.fuel_factor > 0.0 and !each.is_burned))
+	            with_max_of (each.fuel_factor);
+	        if (ignition_cell != nil) {
+	            ask ignition_cell { is_burning <- true; color <- COLOR_BURNING; }
+	        }
+	    }
+	}
 }

@@ -32,27 +32,26 @@ species coordinador control: simple_bdi {
     }
     
     reflex collect_intelligence when: every(20 #cycles) {
-        // Buscar agentes que tengan creencias de fuego que yo no tengo
-        list<recon_drone> drones_in_range <- recon_drone where (each distance_to self < coverage_range);
-        
-        loop d over: drones_in_range {
-            ask d {
-                loop belief over: get_beliefs_with_name("wildfire_detected") {
-                    point fire_loc <- point(predicate(belief).values["location"]);
-                    
-                    // 1. Verificación segura con paréntesis para el tipado booleano
-                    if (!(myself.known_fire_states.keys contains fire_loc)) {
-                        write "[Protocolo 1 - Recuperado] Coordinador: Inteligencia remota recibida en " + fire_loc;
-                        myself.known_fire_states[fire_loc] <- "activo";
-                        // 2. Usamos myself para que sea el Coordinador quien despache
-                        ask myself {
-                            do dispatch_optimal_unit(fire_loc);
-                        }
-                    }
-                }
-            }
-        }
-    }
+	    list<recon_drone> drones_in_range <- recon_drone where (each distance_to self < coverage_range);
+	    list<point> new_fires <- [];
+	
+	    loop d over: drones_in_range {
+	        ask d {
+	            loop belief over: get_beliefs_with_name("wildfire_detected") {
+	                point loc <- point(predicate(belief).values["location"]);
+	                if (!(myself.known_fire_states.keys contains loc)) {
+	                    new_fires <- new_fires + [loc];
+	                }
+	            }
+	        }
+	    }
+	
+	    loop loc over: new_fires {
+	        write "[Protocolo 1 - Recuperado] Coordinador: Inteligencia remota en " + loc;
+	        known_fire_states[loc] <- "activo";
+	        do dispatch_optimal_unit(loc);
+	    }
+	}
 
     // --- COGNITIVE ACTIONS ---
 

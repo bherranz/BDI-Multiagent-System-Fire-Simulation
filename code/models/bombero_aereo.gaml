@@ -104,7 +104,7 @@ species bombero_aereo parent: agente_operativo {
         list<terrain_cell> nearby_fires <- (terrain_cell overlapping search_zone) where (each.is_burning);
         float fire_count <- float(length(nearby_fires));
 
-        if (fire_count > 15.0 and carga_agua < aerial_firefighter_max_water * 0.3) {
+        if (fire_count > 8.0) {
             write "⚠️ [Protocolo 4] Helicóptero [" + name + "]: Request(ayudar(foco=" + foco_asignado + "))";
             
             if (is_centralized_model) {
@@ -191,7 +191,7 @@ species bombero_aereo parent: agente_operativo {
     action emergency_evacuation_protocol {
         write "🚨 [Protocolo 8] Helicóptero [" + name + "]: Inform(retiradaEmergencia(condición_crítica))";
         estado_operativo <- "Retirada";
-        
+        ask world { do registrar_evacuacion; }
         if (foco_asignado != nil) {
             if (is_centralized_model) {
                 ask one_of(coordinador) {
@@ -235,10 +235,10 @@ species bombero_aereo parent: agente_operativo {
         do report_status_to_coordinator;
     }
 
-    reflex protocol_4_check_reinforcements when: (estado_operativo = "Extinguiendo" or estado_operativo = "En vuelo") 
-    and foco_asignado != nil and (int(cycle) mod 7 = 0) {
-        do request_reinforcements;
-    }
+    reflex protocol_4_check_reinforcements when: estado_operativo = "Extinguiendo" and (int(cycle) mod 20 = 0) {
+	    refuerzos_pedidos <- false;
+	    do request_reinforcements;
+	}
 
     reflex wind_exposure_check {
         if (wind_intensity > aerial_firefighter_wind_tolerance) {
@@ -413,7 +413,8 @@ species bombero_aereo parent: agente_operativo {
             } else {
                 // Escaneo ampliado SOLO si el área inmediata está limpia
                 geometry extended_search <- circle(250.0) at_location {location.x, location.y};
-                list<terrain_cell> more_fires <- (terrain_cell overlapping extended_search) where (each.is_burning);
+                list<terrain_cell> more_fires <- (terrain_cell overlapping extended_search)
+        			where (each.is_burning and each.fuel_factor > 0.0);
 
                 if (!empty(more_fires)) {
                     foco_asignado <- (more_fires with_min_of (each distance_to self)).location;

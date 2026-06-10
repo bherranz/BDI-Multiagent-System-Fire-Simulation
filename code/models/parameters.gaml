@@ -19,7 +19,7 @@ global {
     
     // --- GROUND FIREFIGHTER (BOMBERO TERRESTRE) PARAMETERS ---
     int firefighter_fleet_size <- 5;            // Number of active ground units
-    float firefighter_speed <- 90.0;            // Base speed (slower than drones)
+    float firefighter_speed <- 60.0;            // Base speed (slower than drones)
     float firefighter_max_water <- 4000.0;      // Maximum water load (liters)
     float firefighter_max_fatigue <- 100.0;     // Fatigue threshold
     float firefighter_max_stress <- 100.0;      // Stress threshold (survival trigger)

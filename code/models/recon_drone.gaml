@@ -308,6 +308,7 @@ species recon_drone control: simple_bdi skills: [moving] {
         terrain_cell fire_cell  <- terrain_cell closest_to fire_location;
         float fire_intensity    <- (fire_cell != nil) ? fire_cell.fuel_factor : 0.5;
         float fuel_available    <- (fire_cell != nil) ? fire_cell.fuel_factor : 0.0;
+        total_focos_detectados <- total_focos_detectados + 1;
 
         if (is_centralized_model) {
 		    write "🔔 [Protocolo 1] Inform(focoDetectado(pos=" + fire_location

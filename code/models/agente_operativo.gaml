@@ -16,6 +16,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
     float carga_agua;
     string estado_operativo <- "Disponible"; // Disponible | Extinguiendo | Recargando | Retirada | Repostando | En vuelo
     point foco_asignado <- nil;
+	point foco_original <- nil;
     float radio_mision   <- 150.0;
 	float prioridad_mision <- 4.0;
 	list<point> patrol_route <- []; // Registro de focos para retomar tras retirada
@@ -59,6 +60,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	    if (puede) {
 	        write "🟢 [Protocolo 2] " + name + ": AGREE — Aceptando misión en " + target_location;
 	        foco_asignado <- target_location;
+	        foco_original <- target_location;
 	        geometry initial_zone <- circle(radio_mision) at_location target_location;
 	        focos_iniciales <- length((terrain_cell overlapping initial_zone) where (each.is_burning));
 	        do add_desire(predicate(DESEO_EXTINGUIR), prioridad_mision);
@@ -85,20 +87,28 @@ species agente_operativo control: simple_bdi skills: [moving] {
     
     
 	// RNF-04: Comportamiento autónomo cuando el coordinador no cubre al agente
-	reflex autonomia_local when: is_centralized_model 
-        and estado_operativo = "Disponible" 
-        and foco_asignado = nil
-        and every(10 #cycles)
-        and (empty(coordinador) or (self distance_to one_of(coordinador)) > one_of(coordinador).coverage_range) {
-        
-        if (!empty(creencias_focos_local)) {
-            point foco_cercano <- creencias_focos_local.keys with_min_of (each distance_to self);
-            if (creencias_focos_local[foco_cercano] = "activo") {
-                write "[RNF-04] " + name + ": Out of coordinator range. Acting autonomously at " + foco_cercano;
-                do request_mission(foco_cercano);
-            }
-        }
-    }
+	reflex autonomia_local when: is_centralized_model
+	    and estado_operativo = "Disponible" and foco_asignado = nil and every(10 #cycles)
+	    and (empty(coordinador) or (self distance_to one_of(coordinador)) > one_of(coordinador).coverage_range) {
+	
+	    if (!empty(creencias_focos_local)) {
+	        // Usar mapa local si tiene datos
+	        point foco_cercano <- creencias_focos_local.keys with_min_of (each distance_to self);
+	        if (creencias_focos_local[foco_cercano] = "activo") {
+	            write "⚠️ [RNF-04] " + name + ": Fuera de rango. Actuando con mapa local → " + foco_cercano;
+	            do request_mission(foco_cercano);
+	        }
+	    } else {
+	        // Fallback: percepción directa del entorno
+	        list<terrain_cell> visible <- terrain_cell where
+	            (each.is_burning and each distance_to self < 2000.0);
+	        if (!empty(visible)) {
+	            point foco_cercano <- (visible with_min_of (each distance_to self)).location;
+	            write "⚠️ [RNF-04] " + name + ": Fuera de rango. Percepción directa → " + foco_cercano;
+	            do request_mission(foco_cercano);
+	        }
+	    }
+	}
 
     // Protocolo 2 CNP: calcular y devolver coste estimado para una puja
     action calcular_puja(point ubicacion_foco) type: float {
@@ -117,17 +127,21 @@ species agente_operativo control: simple_bdi skills: [moving] {
     
     action notify_mission_completion {
 	    point finished_target <- foco_asignado;
-	    
-	    // Búsqueda de restos antes de liberarse
+	
+	    // Búsqueda de restos: solo redirigir si hay fuego ACTIVO a menos de 400m
+	    // y el agente tiene agua suficiente para seguir (>20% del máximo)
+	    bool tiene_agua <- carga_agua > (firefighter_max_water * 0.2);
 	    geometry sweep_zone <- circle(400.0) at_location finished_target;
-	    list<terrain_cell> residual_fires <- (terrain_cell overlapping sweep_zone) where (each.is_burning);
-	    if (!empty(residual_fires)) {
+	    list<terrain_cell> residual_fires <- (terrain_cell overlapping sweep_zone)
+	        where (each.is_burning);
+	
+	    if (!empty(residual_fires) and tiene_agua) {
 	        terrain_cell nearest_residual <- residual_fires with_min_of (each distance_to self);
 	        write "🔍 " + name + ": Restos detectados. Continuando en " + nearest_residual.location;
 	        foco_asignado <- nearest_residual.location;
 	        geometry new_zone <- circle(radio_mision) at_location foco_asignado;
 	        focos_iniciales <- length((terrain_cell overlapping new_zone) where (each.is_burning));
-	        return; // No liberar, continuar con el deseo activo
+	        return;
 	    }
 	
 	    // Protocolo 9: notificar finalización
@@ -144,14 +158,14 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	        ask nearby_drones { do receive_mission_completion(finished_target); }
 	    }
 	
-	    // Resetear estado completo
-	    foco_asignado          <- nil;
-	    estado_operativo       <- "Disponible";
-	    refuerzos_pedidos      <- false;
-	    retirada_notificada    <- false;
-	    emergencia_notificada  <- false;
-	    repostaje_notificado   <- false;
-	    progreso_ultimo_reporte <- -1.0;
+	    // Resetear estado completo — en este orden exacto
 	    do remove_desire(predicate(DESEO_EXTINGUIR));
+	    foco_asignado           <- nil;
+	    estado_operativo        <- "Disponible";
+	    refuerzos_pedidos       <- false;
+	    retirada_notificada     <- false;
+	    emergencia_notificada   <- false;
+	    repostaje_notificado    <- false;
+	    progreso_ultimo_reporte <- -1.0;
 	}
 }

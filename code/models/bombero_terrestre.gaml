@@ -90,13 +90,13 @@ species bombero_terrestre parent: agente_operativo {
 
     // Protocolo 4: Petición de refuerzos
     action request_reinforcements {
-        if (refuerzos_pedidos) { return; } 
+        if (refuerzos_pedidos) { return; }
 
-        geometry search_zone <- circle(200.0) at_location {location.x, location.y};
-        list<terrain_cell> nearby_fires <- (terrain_cell overlapping search_zone) where (each.is_burning);
-        float fire_count <- float(length(nearby_fires));
+	    geometry search_zone <- circle(200.0) at_location {location.x, location.y};
+	    list<terrain_cell> nearby_fires <- (terrain_cell overlapping search_zone) where (each.is_burning);
+	    float fire_count <- float(length(nearby_fires));
 
-        if (fire_count > 5.0 and carga_agua < firefighter_max_water * 0.5) {
+        if (fire_count > 5.0) {
             write "⚠️ [Protocolo 4] Bombero [" + name + "]: Request(ayudar(foco=" + foco_asignado + "))";
             
             if (is_centralized_model) {
@@ -105,11 +105,11 @@ species bombero_terrestre parent: agente_operativo {
                 }
             } else {
                 float broadcast_range <- 500.0;
-                list<bombero_terrestre> nearby_ground <- bombero_terrestre where (each != self and each distance_to self < broadcast_range);
                 list<bombero_aereo> nearby_aerial <- bombero_aereo where (each distance_to self < broadcast_range);
+                list<bombero_terrestre> nearby_ground <- bombero_terrestre where (each != self and each distance_to self < broadcast_range);
                 
-                ask nearby_ground { do request_mission(myself.foco_asignado); }
                 ask nearby_aerial { do request_mission(myself.foco_asignado); }
+                ask nearby_ground { do request_mission(myself.foco_asignado); }
             }
             refuerzos_pedidos <- true;
         }
@@ -152,6 +152,7 @@ species bombero_terrestre parent: agente_operativo {
     action emergency_evacuation_protocol {
         write "🚨 [Protocolo 8] Bombero [" + name + "]: Inform(retiradaEmergencia(riesgo_crítico))";
         estado_operativo <- "Retirada";
+        ask world { do registrar_evacuacion; }
         
         if (foco_asignado != nil) {
             if (is_centralized_model) {
@@ -183,9 +184,10 @@ species bombero_terrestre parent: agente_operativo {
     }
 
     // Protocolo 4: Detectar necesidad de refuerzos
-    reflex protocol_4_check_reinforcements when: estado_operativo = "Extinguiendo" and (int(cycle) mod 7 = 0) {
-        do request_reinforcements;
-    }
+    reflex protocol_4_check_reinforcements when: estado_operativo = "Extinguiendo" and (int(cycle) mod 20 = 0) {
+	    refuerzos_pedidos <- false;
+	    do request_reinforcements;
+	}
 
     // Evaluate stress periodically instead of every cycle
     reflex evaluate_emotions when: (estado_operativo = "Extinguiendo" or estado_operativo = "Disponible") and every(5 #cycles) {
@@ -306,18 +308,19 @@ species bombero_terrestre parent: agente_operativo {
             }
             write "Bombero [" + name + "]: Extinguishing. Water: " + int(carga_agua) + "L";
         } else {
-            geometry extended_search <- circle(250.0) at_location {location.x, location.y};
-            list<terrain_cell> more_fires <- (terrain_cell overlapping extended_search) where (each.is_burning);
-            if (!empty(more_fires)) {
-                foco_asignado <- (more_fires with_min_of (each distance_to self)).location;
-                geometry new_zone <- circle(150.0) at_location foco_asignado;
-                focos_iniciales <- length((terrain_cell overlapping new_zone) where (each.is_burning));
-                write "Bombero [" + name + "]: Moving to next fire cluster at " + foco_asignado;
-            } else {
-                write "Bombero [" + name + "]: Sector secured.";
-                do notify_mission_completion;
-            }
-        }
+		    geometry extended_search <- circle(250.0) at_location {location.x, location.y};
+		    list<terrain_cell> more_fires <- (terrain_cell overlapping extended_search)
+		        where (each.is_burning and each.fuel_factor > 0.0);
+		    if (!empty(more_fires)) {
+		        foco_asignado <- (more_fires with_min_of (each distance_to self)).location;
+		        geometry new_zone <- circle(150.0) at_location foco_asignado;
+		        focos_iniciales <- length((terrain_cell overlapping new_zone) where (each.is_burning));
+		        write "Bombero [" + name + "]: Moving to next fire cluster at " + foco_asignado;
+		    } else {
+		        write "Bombero [" + name + "]: Sector secured.";
+		        do notify_mission_completion;
+		    }
+		}
     }
     
     // Eleva al agente sobre la superficie del DEM para una visualización 3D correcta.
@@ -345,21 +348,43 @@ species bombero_terrestre parent: agente_operativo {
 
         // --- FASE A: NAVEGACIÓN POR CARRETERA (todo lo cerca que se pueda por carretera) ---
         // Solo conducimos si: estamos lejos, y la carretera nos deja MÁS cerca del foco
-        // de lo que ya estamos a pie (si no, sería un rodeo inútil).
+        // de lo que ya estamos a pie 
         if (network_ok and dist_to_target > walk_threshold) {
             point access <- road_access_point(target_2d);
             float access_to_target <- (access = nil) ? 1e9 : (access distance_to target_2d);
 
             if (access != nil and access_to_target < dist_to_target) {
-                // goto gestiona automáticamente entrar al grafo, circular por las aristas
-                // y salir por el punto más cercano al foco. Trabajamos en el plano 2D del grafo.
-                location <- {location.x, location.y, 0.0};
+			    // Comprobar si hay fuego inmediatamente adelante en la carretera
+			    float ahead_dist <- min(60.0, dist_to_target * 0.1);
+			    float angle_to_target <- location direction_to target_dest;
+			    point ahead_point <- {
+			        location.x + cos(angle_to_target) * ahead_dist,
+			        location.y + sin(angle_to_target) * ahead_dist
+			    };
+			    geometry ahead_zone <- circle(25.0) at_location ahead_point;
+			    list<terrain_cell> road_fires <- (terrain_cell overlapping ahead_zone) where (each.is_burning);
+			
+			    if (!empty(road_fires) and carga_agua > (firefighter_max_water * 0.2)) {
+			        write "🔥➡️💧 Bombero [" + name + "]: Fuego en carretera, apagando paso.";
+			        loop fire_cell over: road_fires {
+			            float water_use <- 8.0 * (1.0 + (nivel_estres / firefighter_max_stress * 0.5));
+			            if (carga_agua >= water_use) {
+			                carga_agua           <- carga_agua - water_use;
+			                fire_cell.is_burning <- false;
+			                fire_cell.is_burned  <- true;
+			                fire_cell.color      <- COLOR_BURNED;
+			            }
+			        }
+			        do snap_to_terrain;
+			        return;
+			    }
+			    location <- {location.x, location.y, 0.0};
                 do goto target: target_2d on: drivable_network speed: speed * 1.2;
                 do snap_to_terrain;
 
                 if (!log_carretera) {
                     write "🛣️ Bombero [" + name + "]: circulando por carretera hacia el foco.";
-                    log_carretera <- true; // log único; puedes borrar esta línea y el atributo
+                    log_carretera <- true;
                 }
                 return;
             }
@@ -389,35 +414,56 @@ species bombero_terrestre parent: agente_operativo {
         };
 
         // Protocolo de evitación táctica de celdas en llamas
-        terrain_cell next_cell <- terrain_cell(next_location);
-        if (next_cell != nil and next_cell.is_burning and dist_to_target > 60.0) {
-            write "Bombero [" + name + "]: Fire in route, searching alternative.";
-            nivel_estres <- min(firefighter_max_stress, nivel_estres + 1.0);
-
-            bool found_path <- false;
-            loop offset over: [-45.0, 45.0, -90.0, 90.0] {
-                float base_angle <- location direction_to target_dest;
-                float new_angle  <- base_angle + offset;
-                point alt_loc <- {
-                    location.x + cos(new_angle) * current_speed,
-                    location.y + sin(new_angle) * current_speed,
-                    location.z
-                };
-                terrain_cell alt_cell <- terrain_cell(alt_loc);
-                if (alt_cell != nil and !alt_cell.is_burning) {
-                    location <- alt_loc;
-                    found_path <- true;
-                    break;
-                }
-            }
-            if (!found_path) { write "Bombero [" + name + "]: Surrounded by fire, waiting."; }
-
-            do snap_to_terrain;
-            return;
-        }
-
-        if (dist_to_target <= 5.0) { return; }
-        location <- next_location;
+		terrain_cell next_cell <- terrain_cell(next_location);
+		if (next_cell != nil and next_cell.is_burning and dist_to_target > 60.0) {
+		
+		    // Intentar apagar el fuego que bloquea el paso antes de buscar desvío
+		    if (carga_agua > (firefighter_max_water * 0.2)) {
+		        geometry block_zone <- circle(30.0) at_location next_location;
+		        list<terrain_cell> blocking_fires <- (terrain_cell overlapping block_zone) where (each.is_burning);
+		
+		        if (!empty(blocking_fires)) {
+		            write "🔥➡️💧 Bombero [" + name + "]: Fuego en ruta, apagando paso antes de continuar.";
+		            loop fire_cell over: blocking_fires {
+		                float water_use <- 8.0 * (1.0 + (nivel_estres / firefighter_max_stress * 0.5));
+		                if (carga_agua >= water_use) {
+		                    carga_agua           <- carga_agua - water_use;
+		                    fire_cell.is_burning <- false;
+		                    fire_cell.is_burned  <- true;
+		                    fire_cell.color      <- COLOR_BURNED;
+		                }
+		            }
+		            do snap_to_terrain;
+		            return; // Este ciclo apaga, el siguiente ya puede avanzar
+		        }
+		    }
+		
+		    // Sin agua suficiente o sin fuego apagable, buscar desvío
+		    write "Bombero [" + name + "]: Fire in route, searching alternative.";
+		    nivel_estres <- min(firefighter_max_stress, nivel_estres + 1.0);
+		
+		    bool found_path <- false;
+		    loop offset over: [-45.0, 45.0, -90.0, 90.0] {
+		        float base_angle <- location direction_to target_dest;
+		        float new_angle  <- base_angle + offset;
+		        point alt_loc <- {
+		            location.x + cos(new_angle) * current_speed,
+		            location.y + sin(new_angle) * current_speed,
+		            location.z
+		        };
+		        terrain_cell alt_cell <- terrain_cell(alt_loc);
+		        if (alt_cell != nil and !alt_cell.is_burning) {
+		            location <- alt_loc;
+		            found_path <- true;
+		            break;
+		        }
+		    }
+		    if (!found_path) { write "Bombero [" + name + "]: Surrounded by fire, waiting."; }
+		
+		    do snap_to_terrain;
+		    return;
+		}
+		location <- next_location;
         do snap_to_terrain;
     }
 }
