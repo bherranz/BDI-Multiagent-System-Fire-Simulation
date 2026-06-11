@@ -1,6 +1,6 @@
 /**
 * Name: Main Simulation
-* Description: Entry point, initialization orchestration and GUI.
+* Description: Inicialización y creación de agentes
 */
 model GredosSimulation
 
@@ -18,6 +18,8 @@ global {
     geometry shape <- envelope(dem_file);
     graph road_network;
     graph drivable_network; // Red transitable
+    int burning_count <- 0;
+	int burned_count  <- 0;
 
     init {
         write "Processing the map...";
@@ -79,10 +81,8 @@ global {
         ask fuel_zone   { do assign_fuel_to_cells; }
         ask road        { do mark_cells; }
         ask water_point { do mark_cells; }
-        
-        // Aplanamos las carreteras a 2D (z=0) para construir el grafo de navegación.
+
         list<geometry> road_geoms_2d <- (road as list) collect (line(each.shape.points collect ({each.x, each.y, 0.0})));
-        
         // Limpiar el grafo para generar una red limpia
         list<geometry> clean_roads <- clean_network(road_geoms_2d, 3.0, true, true);
         
@@ -92,7 +92,7 @@ global {
 
     action ignite_fire {
 	    logistics_base base <- one_of(logistics_base);
-	    float max_distance <- 3000.0; // radio máximo en metros desde la base
+	    float max_distance <- 4000.0; // radio máximo en metros desde la base
 	
 	    // Buscar celda con combustible alto dentro del radio
 	    list<terrain_cell> candidates <- terrain_cell where (
@@ -109,6 +109,7 @@ global {
 	        ask ignition_cell {
 	            is_burning <- true;
 	            color      <- COLOR_BURNING;
+	            world.burning_count <- world.burning_count + 1;
 	        }
 	        write "Incendio iniciado en " + ignition_cell.location
 	            + " (combustible: " + ignition_cell.fuel_factor
@@ -119,8 +120,13 @@ global {
 	        ignition_cell <- (terrain_cell where (each.fuel_factor > 0.0 and !each.is_burned))
 	            with_max_of (each.fuel_factor);
 	        if (ignition_cell != nil) {
-	            ask ignition_cell { is_burning <- true; color <- COLOR_BURNING; }
+	            ask ignition_cell { is_burning <- true; color <- COLOR_BURNING; world.burning_count <- world.burning_count + 1;}
 	        }
 	    }
+	}
+	
+	reflex vary_wind when: every(50 #cycles) {
+	    wind_direction <- wind_direction + rnd(-15.0, 15.0);
+	    wind_intensity  <- max(0.5, min(5.0, wind_intensity + rnd(-0.3, 0.3)));
 	}
 }

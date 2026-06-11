@@ -1,6 +1,6 @@
 /**
-* Name: Static Infrastructure
-* Description: Roads, water points and logistics bases.
+* Name: Infraestructura estática
+* Description: Carreteras, puntos de agua y base logística
 */
 model GredosInfrastructure
 

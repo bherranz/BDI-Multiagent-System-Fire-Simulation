@@ -15,7 +15,7 @@ import "bombero_aereo.gaml"
 species recon_drone control: simple_bdi skills: [moving] {
 
     // --- ATRIBUTOS ONTOLÓGICOS ---
-    float nivel_bateria;          // Autonomía energética restante (§3.4.1)
+    float nivel_bateria;
     float wind_tolerance <- drone_wind_tolerance;
     int patrol_waypoint_index <- 0;
     list<point> patrol_route <- [];
@@ -61,14 +61,29 @@ species recon_drone control: simple_bdi skills: [moving] {
     }
 
 	reflex propagate_fire_knowledge when: !empty(get_beliefs_with_name("wildfire_detected")) and every(3 #cycles) {
-	    list<recon_drone> drones_cercanos <- recon_drone where (each distance_to self < 2000.0);
+	    list<recon_drone> drones_cercanos <- recon_drone at_distance 2000.0;
+	    if (empty(drones_cercanos)) { return; }
+	    list<predicate> mis_focos <- get_beliefs_with_name("wildfire_detected") collect (predicate(each));
+	    
 	    loop p over: drones_cercanos {
-	        loop b over: get_beliefs_with_name("wildfire_detected") {
-	            predicate pred_fuego <- predicate(b);
-	            ask p {
-	                if (!has_belief(pred_fuego)) {
-	                    do add_belief(pred_fuego);
-	                    write "📡 [GOSSIP] Dron [" + name + "] recibe creencia de fuego.";
+	        list<predicate> focos_nuevos <- [];
+	        ask p {
+	            focos_nuevos <- mis_focos where (!has_belief(each));
+	        }
+	        if (empty(focos_nuevos)) { continue; }
+	        ask p {
+	            loop pred_fuego over: focos_nuevos {
+	                do add_belief(pred_fuego);
+	                write "[GOSSIP] Dron [" + name + "] recibe creencia de fuego.";
+	                
+	                if (!is_centralized_model) {
+	                    point fire_loc <- point(pred_fuego.values["location"]);
+	                    bool already_covered <- (bombero_terrestre first_with (each.foco_asignado != nil and each.foco_asignado distance_to fire_loc < 150.0) != nil) or 
+	                                            (bombero_aereo first_with (each.foco_asignado != nil and each.foco_asignado distance_to fire_loc < 150.0) != nil);
+	                    
+	                    if (!already_covered) {
+	                        do trigger_reporting_protocol(fire_loc);
+	                    }
 	                }
 	            }
 	        }
@@ -86,7 +101,7 @@ species recon_drone control: simple_bdi skills: [moving] {
             float battery_percent <- (nivel_bateria / drone_max_fuel) * 100.0;
 
             if (is_centralized_model) {
-                write "🔋 [Protocolo 6] Inform(retiradaBateria(sector=" + sector_id + ", bateria=" + int(battery_percent) + "%)) → Coordinador";
+                write "[Protocolo 6] Inform(retiradaBateria(sector=" + sector_id + ", bateria=" + int(battery_percent) + "%)) → Coordinador";
                 if (!empty(coordinador)) {
                     coordinador coord <- one_of(coordinador);
                     if ((self distance_to coord) <= coord.coverage_range) {
@@ -94,12 +109,12 @@ species recon_drone control: simple_bdi skills: [moving] {
                             do receive_battery_alert(myself, sector_id, battery_percent);
                         }
                     } else {
-                        write "📵 Dron [" + name + "]: Fuera de rango. Retirando a base sin notificar.";
+                        write "Dron [" + name + "]: Fuera de rango. Retirando a base sin notificar.";
                     }
                 }
             } else {
                 // Protocolo 6 P2P: delegar ruta a dron cercano con batería suficiente
-                write "📡 [Protocolo 6 - P2P] Dron [" + name + "]: Broadcast de batería crítica a pares.";
+                write "[Protocolo 6 - P2P] Dron [" + name + "]: Broadcast de batería crítica a pares.";
                 float broadcast_range <- 2500.0;
                 list<recon_drone> nearby_drones <- recon_drone where (
                     each != self and
@@ -108,12 +123,12 @@ species recon_drone control: simple_bdi skills: [moving] {
                 );
                 if (!empty(nearby_drones)) {
                     recon_drone relief <- nearby_drones with_min_of (each distance_to self);
-                    write "🤝 [Protocolo 6 - P2P] Dron [" + name + "]: Delegando ruta a [" + relief.name + "].";
+                    write "[Protocolo 6 - P2P] Dron [" + name + "]: Delegando ruta a [" + relief.name + "].";
                     ask relief {
                         do receive_sector_delegation(myself.patrol_route);
                     }
                 } else {
-                    write "🚨 [Protocolo 6 - P2P] Dron [" + name + "]: Ningún dron cercano disponible para el relevo.";
+                    write "[Protocolo 6 - P2P] Dron [" + name + "]: Ningún dron cercano disponible para el relevo.";
                 }
             }
 
@@ -157,7 +172,7 @@ species recon_drone control: simple_bdi skills: [moving] {
 	
 	    // Batería crítica, abandonar vigilancia
 	    if (nivel_bateria <= (drone_max_fuel * 0.2)) {
-	        write "🔋 Dron [" + name + "]: Batería crítica durante vigilancia. Retirando.";
+	        write "Dron [" + name + "]: Batería crítica durante vigilancia. Retirando.";
 	        zona_vigilada <- nil;
 	        ciclos_vigilando <- 0;
 	        do remove_desire(predicate(VIGILAR_DESIRE));
@@ -187,7 +202,7 @@ species recon_drone control: simple_bdi skills: [moving] {
 	    bool still_burning <- !empty((terrain_cell overlapping watch_zone) where (each.is_burning));
 	
 	    if (!still_burning or ciclos_vigilando >= max_ciclos_vigilancia) {
-	        write "✅ Dron [" + name + "]: Zona en " + zona_vigilada + " controlada. Reanudando patrulla.";
+	        write "Dron [" + name + "]: Zona en " + zona_vigilada + " controlada. Reanudando patrulla.";
 	        zona_vigilada <- nil;
 	        ciclos_vigilando <- 0;
 	        do remove_desire(predicate(VIGILAR_DESIRE));
@@ -207,7 +222,7 @@ species recon_drone control: simple_bdi skills: [moving] {
             !each.has_desire(predicate(PATROL_DESIRE))
         );
         if (length(drones_recargando) >= target_base.capacidad) {
-            write "🔋 [Protocolo 6] Base llena (" + length(drones_recargando) + "/" + target_base.capacidad + " slots). Dron [" + name + "] en espera.";
+            write "[Protocolo 6] Base llena (" + length(drones_recargando) + "/" + target_base.capacidad + " slots). Dron [" + name + "] en espera.";
             do goto target: {location.x + rnd(-80, 80), location.y + rnd(-80, 80), location.z} speed: speed * 0.3;
             return;
         }
@@ -224,7 +239,7 @@ species recon_drone control: simple_bdi skills: [moving] {
 
         if (my_pos_2d distance_to base_pos_2d < 50.0) {
             nivel_bateria <- drone_max_fuel;
-            write "🔋 Dron [" + name + "]: Batería recargada. Reanudando patrulla.";
+            write "Dron [" + name + "]: Batería recargada. Reanudando patrulla.";
             do remove_desire(predicate(REFUEL_DESIRE));
             do add_desire(predicate(PATROL_DESIRE));
         }
@@ -295,7 +310,7 @@ species recon_drone control: simple_bdi skills: [moving] {
     }
     
     action relay_fire_alert(point fire_location, float fire_intensity, float fuel_available) {
-	    write "📡 Dron [" + name + "]: Reenviando alerta de foco en " + fire_location + " al coordinador.";
+	    write "Dron [" + name + "]: Reenviando alerta de foco en " + fire_location + " al coordinador.";
 	    if (!empty(coordinador)) {
 	        ask one_of(coordinador) {
 	            do receive_fire_alert(myself, fire_location, fire_intensity, fuel_available);
@@ -311,7 +326,7 @@ species recon_drone control: simple_bdi skills: [moving] {
         total_focos_detectados <- total_focos_detectados + 1;
 
         if (is_centralized_model) {
-		    write "🔔 [Protocolo 1] Inform(focoDetectado(pos=" + fire_location
+		    write "[Protocolo 1] Inform(focoDetectado(pos=" + fire_location
 		        + ", intensidad=" + fire_intensity
 		        + ", combustible=" + fuel_available + ")) → Coordinador";
 		    if (!empty(coordinador)) {
@@ -323,21 +338,21 @@ species recon_drone control: simple_bdi skills: [moving] {
 		            }
 		        } else {
 		            // Fuera de rango: buscar dron intermediario dentro del rango del coordinador
-		            write "📵 Dron [" + name + "]: Fuera de rango (" + int(self distance_to coord) + "m). Buscando intermediario...";
+		            write "Dron [" + name + "]: Fuera de rango (" + int(self distance_to coord) + "m). Buscando intermediario...";
 		            recon_drone relay <- recon_drone where (
 		                each != self and
 		                (each distance_to coord) <= coord.coverage_range
 		            ) with_min_of (each distance_to self);
 		
 		            if (relay != nil) {
-		                write "🔁 Dron [" + name + "]: Retransmitiendo via [" + relay.name + "].";
+		                write "Dron [" + name + "]: Retransmitiendo via [" + relay.name + "].";
 		                ask relay {
 		                    do relay_fire_alert(fire_location, fire_intensity, fuel_available);
 		                }
 		            } else {
 		                // Ningún intermediario disponible, el gossip propagará la creencia
 		                // hasta que algún dron entre en rango en próximos ciclos
-		                write "⚠️ Dron [" + name + "]: Sin intermediarios en rango. Foco registrado localmente vía gossip.";
+		                write "Dron [" + name + "]: Sin intermediarios en rango. Foco registrado localmente vía gossip.";
 		            }
 		        }
 		    }
@@ -353,12 +368,12 @@ species recon_drone control: simple_bdi skills: [moving] {
                 !(empty(bombero_aereo     where (each.foco_asignado != nil and each.foco_asignado distance_to fire_location < 150.0)));
 
             if (already_covered) {
-                write "⚙️ [Protocolo 2 - CNP] Foco en " + fire_location + " ya cubierto. Ignorando.";
+                write "[Protocolo 2 - CNP] Foco en " + fire_location + " ya cubierto. Ignorando.";
                 return;
             }
 
             // --- CONTRACT NET PROTOCOL (Modelo Descentralizado) ---
-            write "📢 [Protocolo 2 - CNP] Dron [" + name + "]: CFP(proponerMision(" + fire_location + ")) → broadcast";
+            write "[Protocolo 2 - CNP] Dron [" + name + "]: CFP(proponerMision(" + fire_location + ")) → broadcast";
 			// Activar vigilancia de la zona tras reportar
 			zona_vigilada <- fire_location;
 			ciclos_vigilando <- 0;
@@ -389,26 +404,26 @@ species recon_drone control: simple_bdi skills: [moving] {
 
             // Fase 2: selección del ganador con menor coste
             if (empty(bids)) {
-                write "🚨 [Protocolo 2 - CNP] Sin candidatos válidos para foco en " + fire_location;
+                write "[Protocolo 2 - CNP] Sin candidatos válidos para foco en " + fire_location;
             } else {
                 agent winner <- bids.keys with_min_of (bids[each]);
-                write "🏆 [Protocolo 2 - CNP] Ganador: [" + winner.name + "] con coste=" + int(bids[winner]);
+                write "[Protocolo 2 - CNP] Ganador: [" + winner.name + "] con coste=" + int(bids[winner]);
 
                 // Fase 3: Accept-Proposal al ganador, Reject-Proposal al resto
                 if (winner is bombero_terrestre) {
                     ask bombero_terrestre(winner) {
-                        write "✅ Accept-Proposal(aceptarCompromiso(" + fire_location + ")) → [" + name + "]";
+                        write "Accept-Proposal(aceptarCompromiso(" + fire_location + ")) → [" + name + "]";
                         do request_mission(fire_location);
                     }
                 } else if (winner is bombero_aereo) {
                     ask bombero_aereo(winner) {
-                        write "✅ Accept-Proposal(aceptarCompromiso(" + fire_location + ")) → [" + name + "]";
+                        write "Accept-Proposal(aceptarCompromiso(" + fire_location + ")) → [" + name + "]";
                         do request_mission(fire_location);
                     }
                 }
 
                 loop loser over: bids.keys where (each != winner) {
-                    write "❌ Reject-Proposal(aceptarCompromiso(" + fire_location + ")) → [" + loser.name + "]";
+                    write "Reject-Proposal(aceptarCompromiso(" + fire_location + ")) → [" + loser.name + "]";
                 }
             }
         }
@@ -421,7 +436,7 @@ species recon_drone control: simple_bdi skills: [moving] {
                 patrol_route <- patrol_route + [pt];
             }
         }
-        write "📡 [Protocolo 6] Dron [" + name + "]: Sector huérfano asumido. Waypoints: " + length(patrol_route);
+        write "[Protocolo 6] Dron [" + name + "]: Sector huérfano asumido. Waypoints: " + length(patrol_route);
     }
 
     // Protocolo 9: Limpiar creencias al extinguirse un foco
@@ -431,7 +446,7 @@ species recon_drone control: simple_bdi skills: [moving] {
             point believed_loc <- point(pred.values["location"]);
             if (believed_loc distance_to extinguished_fire < 150.0) {
                 do remove_belief(pred);
-                write "🧹 [Protocolo 9] Dron [" + name + "]: Foco " + extinguished_fire + " eliminado de memoria.";
+                write "[Protocolo 9] Dron [" + name + "]: Foco " + extinguished_fire + " eliminado de memoria.";
             }
         }
     }

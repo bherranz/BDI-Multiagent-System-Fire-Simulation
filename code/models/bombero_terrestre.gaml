@@ -1,6 +1,7 @@
 /**
 * Name: Agente Bombero Terrestre
 * Description: BDI cognitivo para la unidad operativa terrestre.
+* Hereda de agente_operativo.
 */
 
 model GredosBomberoTerrestre
@@ -19,7 +20,7 @@ species bombero_terrestre parent: agente_operativo {
     float nivel_cansancio   <- 0.0;
     path current_path <- nil;
     point last_destination <- nil;
-    bool log_carretera <- false; // diagnóstico: avisa una vez al circular por carretera (borrable)
+    point cached_access_point <- nil;
 
     // --- PREDICADOS BDI ESPECÍFICOS ---
     string DESEO_DESCANSAR <- "descansar_recuperar";
@@ -50,7 +51,7 @@ species bombero_terrestre parent: agente_operativo {
 	    float margen_agua   <- carga_agua - (firefighter_max_water * 0.15);
 	    float margen_fatiga <- firefighter_max_fatigue - nivel_cansancio;
 	    if (!(margen_agua > 0 and margen_estres > 10.0 and margen_fatiga > 10.0)) {
-	        write "🔴 [Protocolo 2] Bombero [" + name + "]: REFUSE — (agua: " + int(carga_agua) + "L, estrés: " + int(nivel_estres) + ", fatiga: " + int(nivel_cansancio) + ")";
+	        write "[Protocolo 2] Bombero [" + name + "]: REFUSE — (agua: " + int(carga_agua) + "L, estrés: " + int(nivel_estres) + ", fatiga: " + int(nivel_cansancio) + ")";
 	        return false;
 	    }
 	    return true;
@@ -71,7 +72,7 @@ species bombero_terrestre parent: agente_operativo {
         if (abs(progress - progreso_ultimo_reporte) >= 5.0 or progress = 100.0) {
             progreso_ultimo_reporte <- progress;
             
-            write "📊 [Protocolo 3] Bombero [" + name + "]: Inform(focoActualizado(estado=" + fire_state
+            write "[Protocolo 3] Bombero [" + name + "]: Inform(focoActualizado(estado=" + fire_state
                 + ", progreso=" + int(progress) + "%, agua=" + int(carga_agua) + "L, estrés=" + int(nivel_estres) + "))";
                 
             if (is_centralized_model) {
@@ -97,7 +98,7 @@ species bombero_terrestre parent: agente_operativo {
 	    float fire_count <- float(length(nearby_fires));
 
         if (fire_count > 5.0) {
-            write "⚠️ [Protocolo 4] Bombero [" + name + "]: Request(ayudar(foco=" + foco_asignado + "))";
+            write "[Protocolo 4] Bombero [" + name + "]: Request(ayudar(foco=" + foco_asignado + "))";
             
             if (is_centralized_model) {
                 ask one_of(coordinador) {
@@ -118,7 +119,7 @@ species bombero_terrestre parent: agente_operativo {
     // Protocolo 5: Notificación de retirada para recargar agua
     action notify_water_withdrawal {
         if (foco_asignado != nil) {
-            write "💧 [Protocolo 5] Bombero [" + name + "]: Inform(retiradaRecarga(foco=" + foco_asignado + "))";
+            write "[Protocolo 5] Bombero [" + name + "]: Inform(retiradaRecarga(foco=" + foco_asignado + "))";
             
             if (is_centralized_model) {
                 ask one_of(coordinador) {
@@ -142,7 +143,7 @@ species bombero_terrestre parent: agente_operativo {
 				    ask nearby_ground { do request_mission(myself.foco_asignado); }
 				    ask nearby_aerial { do request_mission(myself.foco_asignado); }
 				} else {
-				    write "ℹ️ [Protocolo 5 - P2P] Foco ya extinguido. No se envía relevo.";
+				    write "[Protocolo 5 - P2P] Foco ya extinguido. No se envía relevo.";
 				}
             }
         }
@@ -150,7 +151,7 @@ species bombero_terrestre parent: agente_operativo {
 
     // Protocolo 8: Evacuación de emergencia
     action emergency_evacuation_protocol {
-        write "🚨 [Protocolo 8] Bombero [" + name + "]: Inform(retiradaEmergencia(riesgo_crítico))";
+        write "[Protocolo 8] Bombero [" + name + "]: Inform(retiradaEmergencia(riesgo_crítico))";
         estado_operativo <- "Retirada";
         ask world { do registrar_evacuacion; }
         
@@ -301,10 +302,21 @@ species bombero_terrestre parent: agente_operativo {
                 float water_use <- 8.0 * (1.0 + (nivel_estres / firefighter_max_stress * 0.5));
                 if (carga_agua >= water_use) {
                     carga_agua <- carga_agua - water_use;
-                    fire_cell.is_burning <- false;
-                    fire_cell.is_burned  <- true;
-                    fire_cell.color      <- COLOR_BURNED;
-                }
+					ask fire_cell {
+					    if (is_burning) {
+					        is_burning <- false;
+					        is_burned  <- true;
+					        color      <- COLOR_BURNED;
+					        world.burning_count <- world.burning_count - 1;
+					        world.burned_count  <- world.burned_count + 1;
+					    }
+					}
+                } else {
+		            // Forzar recarga inmediata para evitar estancamiento
+		            do remove_desire(predicate(DESEO_EXTINGUIR));
+		            do add_desire(predicate(DESEO_RECARGAR_AGUA), 5.0);
+		            break;
+		        }
             }
             write "Bombero [" + name + "]: Extinguishing. Water: " + int(carga_agua) + "L";
         } else {
@@ -329,7 +341,7 @@ species bombero_terrestre parent: agente_operativo {
         if (tc != nil) { location <- {location.x, location.y, tc.altitude + 2.0}; }
     }
 
-    // Devuelve el nodo de la red TRANSITABLE (componente principal) más cercano al objetivo.
+    // Devuelve el nodo de la red transitable más cercano al objetivo.
     // Al ser una componente conexa, siempre es alcanzable por carretera desde cualquier otro nodo.
     action road_access_point(point target_2d) type: point {
         if (drivable_network = nil or empty(drivable_network.vertices)) { return nil; }
@@ -346,11 +358,13 @@ species bombero_terrestre parent: agente_operativo {
         bool  network_ok     <- (drivable_network != nil and !empty(drivable_network.edges));
         float walk_threshold <- 50.0; // el último tramo hasta el foco siempre es a pie
 
-        // --- FASE A: NAVEGACIÓN POR CARRETERA (todo lo cerca que se pueda por carretera) ---
-        // Solo conducimos si: estamos lejos, y la carretera nos deja MÁS cerca del foco
-        // de lo que ya estamos a pie 
+        // FASE A: NAVEGACIÓN POR CARRETERA (todo lo cerca que se pueda por carretera) ---
         if (network_ok and dist_to_target > walk_threshold) {
-            point access <- road_access_point(target_2d);
+        	if (last_destination != target_dest) {
+		        last_destination <- target_dest;
+		        cached_access_point <- road_access_point(target_2d);
+		    }
+            point access <- cached_access_point;
             float access_to_target <- (access = nil) ? 1e9 : (access distance_to target_2d);
 
             if (access != nil and access_to_target < dist_to_target) {
@@ -365,14 +379,20 @@ species bombero_terrestre parent: agente_operativo {
 			    list<terrain_cell> road_fires <- (terrain_cell overlapping ahead_zone) where (each.is_burning);
 			
 			    if (!empty(road_fires) and carga_agua > (firefighter_max_water * 0.2)) {
-			        write "🔥➡️💧 Bombero [" + name + "]: Fuego en carretera, apagando paso.";
+			        write "Bombero [" + name + "]: Fuego en carretera, apagando paso.";
 			        loop fire_cell over: road_fires {
 			            float water_use <- 8.0 * (1.0 + (nivel_estres / firefighter_max_stress * 0.5));
 			            if (carga_agua >= water_use) {
 			                carga_agua           <- carga_agua - water_use;
-			                fire_cell.is_burning <- false;
-			                fire_cell.is_burned  <- true;
-			                fire_cell.color      <- COLOR_BURNED;
+							ask fire_cell {
+							    if (is_burning) {
+							        is_burning <- false;
+							        is_burned  <- true;
+							        color      <- COLOR_BURNED;
+							        world.burning_count <- world.burning_count - 1;
+							        world.burned_count  <- world.burned_count + 1;
+							    }
+							}
 			            }
 			        }
 			        do snap_to_terrain;
@@ -381,20 +401,14 @@ species bombero_terrestre parent: agente_operativo {
 			    location <- {location.x, location.y, 0.0};
                 do goto target: target_2d on: drivable_network speed: speed * 1.2;
                 do snap_to_terrain;
-
-                if (!log_carretera) {
-                    write "🛣️ Bombero [" + name + "]: circulando por carretera hacia el foco.";
-                    log_carretera <- true;
-                }
                 return;
             }
         }
-
         // Al salir del modo carretera, invalidamos la ruta cacheada.
         last_destination <- nil;
         current_path     <- nil;
 
-        // --- FASE B: A PIE (continúan andando: recta + evitación de fuego) ---
+        // FASE B: A PIE (continúan andando) ---
         float current_speed <- speed;
         terrain_cell current_cell <- terrain_cell(location);
         if (current_cell != nil) {
@@ -402,7 +416,6 @@ species bombero_terrestre parent: agente_operativo {
             float veg_penalty   <- (current_cell.fuel_factor > 0.05) ? 0.7 : 1.0;
             current_speed <- speed * slope_penalty * veg_penalty;
         }
-
         point normalized_dir <- {
             (target_dest.x - location.x) / dist_to_target,
             (target_dest.y - location.y) / dist_to_target
@@ -416,32 +429,35 @@ species bombero_terrestre parent: agente_operativo {
         // Protocolo de evitación táctica de celdas en llamas
 		terrain_cell next_cell <- terrain_cell(next_location);
 		if (next_cell != nil and next_cell.is_burning and dist_to_target > 60.0) {
-		
 		    // Intentar apagar el fuego que bloquea el paso antes de buscar desvío
 		    if (carga_agua > (firefighter_max_water * 0.2)) {
 		        geometry block_zone <- circle(30.0) at_location next_location;
 		        list<terrain_cell> blocking_fires <- (terrain_cell overlapping block_zone) where (each.is_burning);
 		
 		        if (!empty(blocking_fires)) {
-		            write "🔥➡️💧 Bombero [" + name + "]: Fuego en ruta, apagando paso antes de continuar.";
+		            write "Bombero [" + name + "]: Fuego en ruta, apagando paso antes de continuar.";
 		            loop fire_cell over: blocking_fires {
 		                float water_use <- 8.0 * (1.0 + (nivel_estres / firefighter_max_stress * 0.5));
 		                if (carga_agua >= water_use) {
 		                    carga_agua           <- carga_agua - water_use;
-		                    fire_cell.is_burning <- false;
-		                    fire_cell.is_burned  <- true;
-		                    fire_cell.color      <- COLOR_BURNED;
+							ask fire_cell {
+							    if (is_burning) {
+							        is_burning <- false;
+							        is_burned  <- true;
+							        color      <- COLOR_BURNED;
+							        world.burning_count <- world.burning_count - 1;
+							        world.burned_count  <- world.burned_count + 1;
+							    }
+							}
 		                }
 		            }
 		            do snap_to_terrain;
 		            return; // Este ciclo apaga, el siguiente ya puede avanzar
 		        }
 		    }
-		
 		    // Sin agua suficiente o sin fuego apagable, buscar desvío
 		    write "Bombero [" + name + "]: Fire in route, searching alternative.";
 		    nivel_estres <- min(firefighter_max_stress, nivel_estres + 1.0);
-		
 		    bool found_path <- false;
 		    loop offset over: [-45.0, 45.0, -90.0, 90.0] {
 		        float base_angle <- location direction_to target_dest;
@@ -459,7 +475,6 @@ species bombero_terrestre parent: agente_operativo {
 		        }
 		    }
 		    if (!found_path) { write "Bombero [" + name + "]: Surrounded by fire, waiting."; }
-		
 		    do snap_to_terrain;
 		    return;
 		}

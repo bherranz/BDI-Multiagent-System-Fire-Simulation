@@ -1,10 +1,11 @@
 /**
-* Name: Environment and Physics
-* Description: Terrain cellular automata, fire propagation and fuel mapping.
+* Name: Entorno y físicas
+* Description: Autómata celular del terreno, propagación del fuego
 */
 model GredosEnvironment
 
 import "parameters.gaml"
+import "main.gaml"
 
 // --- CELLULAR AUTOMATION (TERRAIN) ---
 grid terrain_cell file: dem_file {
@@ -31,30 +32,39 @@ grid terrain_cell file: dem_file {
         return (wind_alignment > 0) ? wind_alignment * wind_intensity * 0.05 : 0.0;
     }
 
-    reflex spread_fire when: is_burning and (every(2 #cycles)) {
-        loop nb over: neighbors {
-            if (!nb.is_burning and !nb.is_burned) {
-                float ignition_probability <- nb.fuel_factor
-                    + compute_slope_effect(nb)
-                    + compute_wind_effect(nb)
-                    + epsilon_base + rnd(-0.01, 0.01);
+    // --- PROPAGACIÓN DE INCENDIO OPTIMIZADA ---
+    reflex spread_fire when: is_burning and every(3 #cycles) {
+        fire_duration <- fire_duration + 1;
+        list<terrain_cell> vecinas_potenciales <- neighbors where (!each.is_burning and !each.is_burned);
+        
+        loop nb over: vecinas_potenciales {
+            float ignition_probability <- nb.fuel_factor
+                + compute_slope_effect(nb)
+                + compute_wind_effect(nb)
+                + epsilon_base + rnd(-0.01, 0.01);
 
-                ignition_probability <- max(0.0, min(1.0, ignition_probability));
+            ignition_probability <- max(0.0, min(1.0, ignition_probability));
 
-                if (flip(ignition_probability)) {
-                    nb.is_burning <- true;
-                    nb.color      <- COLOR_BURNING;
+            if (flip(ignition_probability)) {
+                ask nb {
+                    if (!is_burning) {
+                        is_burning <- true;
+                        color      <- COLOR_BURNING;
+                        world.burning_count <- world.burning_count + 1;
+                    }
                 }
             }
         }
     }
 
-    reflex burn_out when: is_burning {
-        fire_duration <- fire_duration + 1;
-        if (fire_duration > cell_burn_duration) {
+    // --- AGOTAMIENTO DE COMBUSTIBLE ATÓMICO ---
+    reflex burn_out when: is_burning and fire_duration >= cell_burn_duration {
+        if (is_burning) {
             is_burning <- false;
             is_burned  <- true;
             color      <- COLOR_BURNED;
+            world.burning_count <- world.burning_count - 1;
+            world.burned_count  <- world.burned_count + 1;
         }
     }
 }

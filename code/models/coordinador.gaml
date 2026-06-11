@@ -1,9 +1,6 @@
 /**
-* Name: Central Coordinator Agent
-* Description: Strategic decision node for the centralized architecture.
-* Memory compliance:
-* - Evitación de redundancia y asignación óptima (§3.2.2)
-* - Rango de cobertura y base de creencias (§3.4.1)
+* Name: Agente Coordinador
+* Description: Nodo de decisión que optimiza la gestión de recursos en el modelo centralizado
 */
 
 model GredosCoordinador
@@ -58,7 +55,7 @@ species coordinador control: simple_bdi {
     // Protocolo 1: Notificación de Incendio
     action receive_fire_alert(recon_drone sender, point fire_location, float fire_intensity, float fuel_available) {
         if (!en_rango(sender)) {
-	        write "📵 [RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
+	        write "[RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
 	        return;
 	    }
         write "[Protocolo 1] Coordinador: Alerta recibida en " + fire_location;
@@ -107,7 +104,7 @@ species coordinador control: simple_bdi {
     // Protocolo 3: Reporte de Estado
     action receive_status_update(agent sender, point target_location, string state, float progress, float res1, float res2) {
         if (!en_rango(sender)) {
-	        write "📵 [RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
+	        write "[RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
 	        return;
 	    }
         write "[Protocolo 3] Coordinador: Inform(focoActualizado) de [" + sender.name + "] - estado=" + state + ", progreso=" + int(progress) + "%";
@@ -123,7 +120,7 @@ species coordinador control: simple_bdi {
     // Protocolo 4: Petición de refuerzos
     action receive_reinforcement_request(agent sender, point target_location, float fire_count) {
         if (!en_rango(sender)) {
-	        write "📵 [RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
+	        write "[RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
 	        return;
 	    }
         write "[Protocolo 4] Coordinador: Solicitud de refuerzos de [" + sender.name + "] para foco en " + target_location;
@@ -150,7 +147,7 @@ species coordinador control: simple_bdi {
     // Protocolo 5: Retirada por recarga de agua
     action receive_withdrawal_notification(agent sender, point target_location, string reason) {
         if (!en_rango(sender)) {
-	        write "📵 [RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
+	        write "[RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
 	        return;
 	    }
         if (target_location = nil) { return; } 
@@ -181,7 +178,7 @@ species coordinador control: simple_bdi {
     // Protocolo 6: Gestión de batería (Dron)
     action receive_battery_alert(recon_drone sender, string sector_id, float battery_percent) {
         if (!en_rango(sender)) {
-	        write "📵 [RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
+	        write "[RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
 	        return;
 	    }
         write "[Protocolo 6] Coordinador: Dron [" + sender.name + "] bateria baja (" + int(battery_percent) + "%). Buscando relevo para su sector...";
@@ -200,7 +197,7 @@ species coordinador control: simple_bdi {
     // Protocolo 7: Repostaje de combustible (Aéreo)
     action receive_fuel_refuel_request(bombero_aereo aerial_unit, point target_location) {
         if (!en_rango(aerial_unit)) {
-	        write "📵 [RNF-04] Coordinador: Mensaje de [" + aerial_unit.name + "] fuera de rango (" + int(aerial_unit distance_to self) + "m). Ignorado.";
+	        write "[RNF-04] Coordinador: Mensaje de [" + aerial_unit.name + "] fuera de rango (" + int(aerial_unit distance_to self) + "m). Ignorado.";
 	        return;
 	    }
         write "[Protocolo 7] Coordinador: [" + aerial_unit.name + "] solicita permiso para repostar combustible.";
@@ -223,7 +220,7 @@ species coordinador control: simple_bdi {
     // Protocolo 8: Evacuación de emergencia
     action receive_emergency_evacuation(agent sender, point target_location, float stress_level) {
         if (!en_rango(sender)) {
-	        write "📵 [RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
+	        write "[RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
 	        return;
 	    }
         write "[Protocolo 8] Coordinador: [" + sender.name + "] en emergencia (estres: " + int(stress_level) + "). Enviando relevo...";
@@ -250,11 +247,10 @@ species coordinador control: simple_bdi {
     // Protocolo 9: Finalización de Misión y Cierre de Foco
     action receive_mission_completion(agent sender, point completed_location) {
         if (!en_rango(sender)) {
-	        write "📵 [RNF-04] Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
-	        return;
-	    }
+            write "Coordinador: Mensaje de [" + sender.name + "] fuera de rango (" + int(sender distance_to self) + "m). Ignorado.";
+            return;
+        }
         write "[Protocolo 9] Coordinador: Mision completada por [" + sender.name + "].";
-
         if (completed_location != nil) {
             assigned_fires <- assigned_fires where (each distance_to completed_location >= assignment_radius);
             known_fire_states[completed_location] <- "extinguido";
@@ -263,11 +259,16 @@ species coordinador control: simple_bdi {
                 do receive_mission_completion(completed_location);
             }
         }
-
-        // Búsqueda Proactiva
         point pending_fire <- nil;
         loop loc over: known_fire_states.keys {
             if (known_fire_states[loc] = "activo") {
+                // Comprobar el estado real de la celda en el entorno antes de reasignar
+                terrain_cell celda_real <- terrain_cell(loc);
+                if (celda_real != nil and !celda_real.is_burning) {
+                    // El fuego se ha extinguido por otra vía.
+                    known_fire_states[loc] <- "extinguido";
+                    continue; 
+                }
                 bool is_assigned <- false;
                 loop assigned_pt over: assigned_fires {
                     if (assigned_pt distance_to loc < assignment_radius) {
@@ -281,7 +282,6 @@ species coordinador control: simple_bdi {
                 }
             }
         }
-        
         if (pending_fire != nil) {
             write "[Protocolo 9] Coordinador: Reasignando foco pendiente en " + pending_fire;
             do dispatch_optimal_unit(pending_fire);

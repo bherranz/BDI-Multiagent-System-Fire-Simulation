@@ -1,7 +1,6 @@
 /**
 * Name: Agente Operativo (Clase Base)
 * Description: Estructura unificada para unidades de extinción (Terrestres y Aéreas).
-* Aplica el principio DRY (Don't Repeat Yourself) y unifica la ontología.
 */
 
 model GredosAgenteOperativo
@@ -22,12 +21,13 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	list<point> patrol_route <- []; // Registro de focos para retomar tras retirada
 	bool repostaje_notificado <- false;
 
+	float max_agua_mision <- firefighter_max_water; // Atributo virtual
     
     // --- VARIABLES INTERNAS DE CONTROL ---
     int focos_iniciales <- 0;
     float progreso_ultimo_reporte <- -1.0;
     
-    // Semáforos para evitar "spam" en las comunicaciones (Protocolos 4, 5 y 8)
+    // Semáforos para evitar spam en las comunicaciones
     bool refuerzos_pedidos <- false;
     bool retirada_notificada <- false;
     bool emergencia_notificada <- false;
@@ -58,7 +58,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	    ask self { puede <- puede_aceptar_mision(); }
 	    
 	    if (puede) {
-	        write "🟢 [Protocolo 2] " + name + ": AGREE — Aceptando misión en " + target_location;
+	        write "[Protocolo 2] " + name + ": AGREE — Aceptando misión en " + target_location;
 	        foco_asignado <- target_location;
 	        foco_original <- target_location;
 	        geometry initial_zone <- circle(radio_mision) at_location target_location;
@@ -81,7 +81,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	            }
 	        }
 	    } else {
-	        write "🔴 [Protocolo 2] " + name + ": REFUSE";
+	        write "[Protocolo 2] " + name + ": REFUSE";
 	    }
 	}
     
@@ -95,7 +95,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	        // Usar mapa local si tiene datos
 	        point foco_cercano <- creencias_focos_local.keys with_min_of (each distance_to self);
 	        if (creencias_focos_local[foco_cercano] = "activo") {
-	            write "⚠️ [RNF-04] " + name + ": Fuera de rango. Actuando con mapa local → " + foco_cercano;
+	            write "[RNF-04] " + name + ": Fuera de rango. Actuando con mapa local → " + foco_cercano;
 	            do request_mission(foco_cercano);
 	        }
 	    } else {
@@ -104,7 +104,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	            (each.is_burning and each distance_to self < 2000.0);
 	        if (!empty(visible)) {
 	            point foco_cercano <- (visible with_min_of (each distance_to self)).location;
-	            write "⚠️ [RNF-04] " + name + ": Fuera de rango. Percepción directa → " + foco_cercano;
+	            write "[RNF-04] " + name + ": Fuera de rango. Percepción directa → " + foco_cercano;
 	            do request_mission(foco_cercano);
 	        }
 	    }
@@ -122,22 +122,21 @@ species agente_operativo control: simple_bdi skills: [moving] {
     // Protocolo 3 P2P: Sincronización de memoria en modo descentralizado
     action recibir_broadcast_estado(point ubicacion, string estado, float progreso) {
         creencias_focos_local[ubicacion] <- estado;
-        write "📡 [Protocolo 3 - P2P] " + name + ": Sincroniza foco " + ubicacion + " → " + estado;
+        write "[Protocolo 3 - P2P] " + name + ": Sincroniza foco " + ubicacion + " → " + estado;
     }
     
     action notify_mission_completion {
-	    point finished_target <- foco_asignado;
-	
-	    // Búsqueda de restos: solo redirigir si hay fuego ACTIVO a menos de 400m
+	    point finished_target <- (foco_original != nil) ? foco_original : foco_asignado;
+	    // Búsqueda de restos: solo redirigir si hay fuego activo cercano
 	    // y el agente tiene agua suficiente para seguir (>20% del máximo)
-	    bool tiene_agua <- carga_agua > (firefighter_max_water * 0.2);
+	    bool tiene_agua <- carga_agua > (max_agua_mision * 0.2);
 	    geometry sweep_zone <- circle(400.0) at_location finished_target;
 	    list<terrain_cell> residual_fires <- (terrain_cell overlapping sweep_zone)
 	        where (each.is_burning);
 	
 	    if (!empty(residual_fires) and tiene_agua) {
 	        terrain_cell nearest_residual <- residual_fires with_min_of (each distance_to self);
-	        write "🔍 " + name + ": Restos detectados. Continuando en " + nearest_residual.location;
+	        write name + ": Restos detectados. Continuando en " + nearest_residual.location;
 	        foco_asignado <- nearest_residual.location;
 	        geometry new_zone <- circle(radio_mision) at_location foco_asignado;
 	        focos_iniciales <- length((terrain_cell overlapping new_zone) where (each.is_burning));
@@ -145,7 +144,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	    }
 	
 	    // Protocolo 9: notificar finalización
-	    write "✅ [Protocolo 9] " + name + ": Inform(misionCompletada(foco=" + finished_target + "))";
+	    write "[Protocolo 9] " + name + ": Inform(misionCompletada(foco=" + finished_target + "))";
 	    if (is_centralized_model) {
 	        if (!empty(coordinador)) {
 	            coordinador coord <- one_of(coordinador);

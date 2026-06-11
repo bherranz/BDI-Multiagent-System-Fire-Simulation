@@ -1,7 +1,7 @@
 /**
 * Name: Agente Bombero Aéreo (Helicóptero)
 * Description: BDI cognitivo para la unidad aérea.
-* Hereda de agente_operativo para aplicar el principio DRY.
+* Hereda de agente_operativo.
 */
 
 model GredosBomberoAereo
@@ -18,9 +18,6 @@ species bombero_aereo parent: agente_operativo {
     // --- ATRIBUTOS ONTOLÓGICOS ESPECÍFICOS ---
     float nivel_combustible;
     float exposicion_viento <- 0.0;
-    
-    // Semáforo específico del helicóptero
-    bool repostaje_notificado <- false;
 
     // --- PREDICADOS BDI ESPECÍFICOS ---
     string DESEO_REPOSTAR_COMBUSTIBLE <- "repostar_combustible";
@@ -38,8 +35,9 @@ species bombero_aereo parent: agente_operativo {
         speed <- aerial_firefighter_speed;
         carga_agua <- aerial_firefighter_max_water;
         nivel_combustible <- aerial_firefighter_max_fuel;
-        radio_mision    <- 120.0;   // ← sobreescribir
+        radio_mision    <- 120.0;
     	prioridad_mision <- 4.5;
+    	max_agua_mision  <- aerial_firefighter_max_water;
     }
 
     // --- COGNITIVE ACTIONS ---
@@ -58,7 +56,7 @@ species bombero_aereo parent: agente_operativo {
 	    float margen_fuel   <- nivel_combustible - (aerial_firefighter_max_fuel * 0.25);
 	    float margen_viento <- aerial_firefighter_wind_tolerance - wind_intensity;
 	    if (!(margen_agua > 0 and margen_fuel > 0 and margen_viento > 0.5)) {
-	        write "🔴 [Protocolo 2] Helicóptero [" + name + "]: REFUSE — (agua: " + int(carga_agua) + "L, fuel: " + int(nivel_combustible) + "L, viento: " + wind_intensity + ")";
+	        write "[Protocolo 2] Helicóptero [" + name + "]: REFUSE — (agua: " + int(carga_agua) + "L, fuel: " + int(nivel_combustible) + "L, viento: " + wind_intensity + ")";
 	        return false;
 	    }
 	    return true;
@@ -79,7 +77,7 @@ species bombero_aereo parent: agente_operativo {
         if (abs(progress - progreso_ultimo_reporte) >= 5.0 or progress = 100.0) {
             progreso_ultimo_reporte <- progress;
             
-            write "📊 [Protocolo 3] Helicóptero [" + name + "]: Inform(focoActualizado(estado=" + fire_state
+            write "[Protocolo 3] Helicóptero [" + name + "]: Inform(focoActualizado(estado=" + fire_state
                 + ", progreso=" + int(progress) + "%, agua=" + int(carga_agua) + "L, fuel=" + int(nivel_combustible) + "L))";
                 
             if (is_centralized_model) {
@@ -105,7 +103,7 @@ species bombero_aereo parent: agente_operativo {
         float fire_count <- float(length(nearby_fires));
 
         if (fire_count > 8.0) {
-            write "⚠️ [Protocolo 4] Helicóptero [" + name + "]: Request(ayudar(foco=" + foco_asignado + "))";
+            write "[Protocolo 4] Helicóptero [" + name + "]: Request(ayudar(foco=" + foco_asignado + "))";
             
             if (is_centralized_model) {
                 ask one_of(coordinador) {
@@ -126,7 +124,7 @@ species bombero_aereo parent: agente_operativo {
     // Protocolo 5: Notificación de retirada para recarga de agua
     action notify_water_withdrawal {
         if (foco_asignado != nil) {
-            write "💧 [Protocolo 5] Helicóptero [" + name + "]: Inform(retiradaRecarga(foco=" + foco_asignado + "))";
+            write "[Protocolo 5] Helicóptero [" + name + "]: Inform(retiradaRecarga(foco=" + foco_asignado + "))";
             if (is_centralized_model) {
                 ask one_of(coordinador) {
                     do receive_withdrawal_notification(myself, myself.foco_asignado, "water_refill");
@@ -149,7 +147,7 @@ species bombero_aereo parent: agente_operativo {
 				    ask nearby_ground { do request_mission(myself.foco_asignado); }
 				    ask nearby_aerial { do request_mission(myself.foco_asignado); }
 				} else {
-				    write "ℹ️ [Protocolo 5 - P2P] Foco ya extinguido. No se envía relevo.";
+				    write "[Protocolo 5 - P2P] Foco ya extinguido. No se envía relevo.";
 				}
             }
         }
@@ -158,7 +156,7 @@ species bombero_aereo parent: agente_operativo {
     // Protocolo 7: Repostaje de combustible y delegación de foco
     action notify_fuel_refueling {
         if (foco_asignado != nil) {
-            write "⛽ [Protocolo 7] Helicóptero [" + name + "]: Inform(retiradaFuel(foco=" + foco_asignado + "))";
+            write "[Protocolo 7] Helicóptero [" + name + "]: Inform(retiradaFuel(foco=" + foco_asignado + "))";
             if (is_centralized_model) {
                 ask one_of(coordinador) {
                     do receive_fuel_refuel_request(myself, myself.foco_asignado);
@@ -181,7 +179,7 @@ species bombero_aereo parent: agente_operativo {
 				    ask nearby_ground { do request_mission(myself.foco_asignado); }
 				    ask nearby_aerial { do request_mission(myself.foco_asignado); }
 				} else {
-				    write "ℹ️ [Protocolo 7 - P2P] Foco ya extinguido. No se envía relevo.";
+				    write "[Protocolo 7 - P2P] Foco ya extinguido. No se envía relevo.";
 				}
             }
         }
@@ -189,7 +187,7 @@ species bombero_aereo parent: agente_operativo {
 
     // Protocolo 8: Evacuación de emergencia
     action emergency_evacuation_protocol {
-        write "🚨 [Protocolo 8] Helicóptero [" + name + "]: Inform(retiradaEmergencia(condición_crítica))";
+        write "[Protocolo 8] Helicóptero [" + name + "]: Inform(retiradaEmergencia(condición_crítica))";
         estado_operativo <- "Retirada";
         ask world { do registrar_evacuacion; }
         if (foco_asignado != nil) {
@@ -225,10 +223,11 @@ species bombero_aereo parent: agente_operativo {
     }
 
     reflex consume_fuel {
-        if (estado_operativo != "Disponible" and estado_operativo != "Repostando") {
-            nivel_combustible <- max(0.0, nivel_combustible - 2.0);
-        }
-    }
+	    if (estado_operativo != "Disponible" and estado_operativo != "Repostando") {
+	        float consumo <- (estado_operativo = "Retirada") ? 1.0 : 2.0;
+	        nivel_combustible <- max(0.0, nivel_combustible - consumo);
+	    }
+	}
 
     reflex protocol_3_periodic_status when: (estado_operativo = "Extinguiendo" or estado_operativo = "En vuelo") 
     and foco_asignado != nil and every(15 #cycles) {
@@ -244,9 +243,13 @@ species bombero_aereo parent: agente_operativo {
         if (wind_intensity > aerial_firefighter_wind_tolerance) {
             exposicion_viento <- exposicion_viento + 1.0;
             if (exposicion_viento > 10.0 and !has_desire(predicate(DESEO_SUPERVIVENCIA))) {
-                do add_desire(predicate(DESEO_SUPERVIVENCIA), 5.5);
-                write "🌪️ Helicóptero [" + name + "]: VIENTO CRÍTICO. Retirada táctica a base.";
-            }
+			    estado_operativo <- "Retirada";
+			    do remove_desire(predicate(DESEO_EXTINGUIR));
+			    do remove_desire(predicate(DESEO_RECARGAR_AGUA));
+			    do remove_desire(predicate(DESEO_REPOSTAR_COMBUSTIBLE));
+			    do add_desire(predicate(DESEO_SUPERVIVENCIA), 5.5);
+			    write "Helicóptero [" + name + "]: VIENTO CRÍTICO. Retirada táctica a base.";
+			}
         } else {
             exposicion_viento <- max(0.0, exposicion_viento - 0.3);
         }
@@ -258,13 +261,13 @@ species bombero_aereo parent: agente_operativo {
             estado_operativo <- "Recargando";
             do remove_desire(predicate(DESEO_EXTINGUIR));
             do add_desire(predicate(DESEO_RECARGAR_AGUA), 5.0); 
-            write "💧 Helicóptero [" + name + "]: Agua crítica (" + int(carga_agua) + "L). Necesita recarga.";
+            write "Helicóptero [" + name + "]: Agua crítica (" + int(carga_agua) + "L). Necesita recarga.";
         }
         if (nivel_combustible <= (aerial_firefighter_max_fuel * 0.25) and !has_desire(predicate(DESEO_REPOSTAR_COMBUSTIBLE))) {
             estado_operativo <- "Repostando";
             do remove_desire(predicate(DESEO_EXTINGUIR)); 
             do add_desire(predicate(DESEO_REPOSTAR_COMBUSTIBLE), 5.0); 
-            write "⛽ Helicóptero [" + name + "]: Combustible crítico (" + int(nivel_combustible) + "L). Solicitando repostaje.";
+            write "Helicóptero [" + name + "]: Combustible crítico (" + int(nivel_combustible) + "L). Solicitando repostaje.";
         }
     }
 
@@ -286,7 +289,7 @@ species bombero_aereo parent: agente_operativo {
                 estado_operativo <- "Disponible";
                 emergencia_notificada <- false;
                 do remove_desire(predicate(DESEO_SUPERVIVENCIA));
-                write "🚁 Helicóptero [" + name + "]: A salvo en base. Estado normalizado.";
+                write "Helicóptero [" + name + "]: A salvo en base. Estado normalizado.";
             }
         }
     }
@@ -305,7 +308,7 @@ species bombero_aereo parent: agente_operativo {
                 carga_agua <- aerial_firefighter_max_water;
                 retirada_notificada <- false;
                 do remove_desire(predicate(DESEO_RECARGAR_AGUA));
-                write "💧 Helicóptero [" + name + "]: Carga de agua completada.";
+                write "Helicóptero [" + name + "]: Carga de agua completada.";
 
                 // Retomar misión de forma autónoma si el foco sigue activo
                 if (foco_asignado != nil) {
@@ -342,8 +345,8 @@ species bombero_aereo parent: agente_operativo {
 	            each distance_to target_base < 100.0
 	        );
 	        if (length(ocupantes) >= target_base.capacidad) {
-	            write "🚁 [Protocolo 7] Base llena (" + length(ocupantes) + "/" + target_base.capacidad + " slots). [" + name + "] en patrón de espera.";
-	            do goto target: {location.x + rnd(-50, 50), location.y + rnd(-50, 50), location.z} speed: speed * 0.3;
+	            write "[Protocolo 7] Base llena (" + length(ocupantes) + "/" + target_base.capacidad + " slots). [" + name + "] en patrón de espera.";
+	            do goto target: target_base.location speed: speed * 0.5;
 	            return;
 	        }
 	
@@ -354,7 +357,7 @@ species bombero_aereo parent: agente_operativo {
                 nivel_combustible <- aerial_firefighter_max_fuel;
                 repostaje_notificado <- false;
                 do remove_desire(predicate(DESEO_REPOSTAR_COMBUSTIBLE));
-                write "⛽ Helicóptero [" + name + "]: Repostaje de combustible completado.";
+                write "Helicóptero [" + name + "]: Repostaje de combustible completado.";
 
                 // Retomar misión de forma autónoma si el foco sigue activo
                 if (foco_asignado != nil) {
@@ -365,7 +368,7 @@ species bombero_aereo parent: agente_operativo {
                         estado_operativo <- "En vuelo";
                         focos_iniciales <- length((terrain_cell overlapping check_zone) where (each.is_burning));
                         do add_desire(predicate(DESEO_EXTINGUIR), 4.5);
-                        write "🚁 Helicóptero [" + name + "]: Retomando misión tras repostar combustible en " + foco_asignado;
+                        write "Helicóptero [" + name + "]: Retomando misión tras repostar combustible en " + foco_asignado;
                     } else {
                         foco_asignado <- nil;
                         estado_operativo <- "Disponible";
@@ -401,14 +404,20 @@ species bombero_aereo parent: agente_operativo {
                     float water_use <- 8.0;
                     if (carga_agua >= water_use) {
                         carga_agua <- carga_agua - water_use;
-                        fire_cell.is_burning <- false;
-                        fire_cell.is_burned  <- true;
-                        fire_cell.color      <- COLOR_BURNED;
                         fires_count <- fires_count + 1;
+						ask fire_cell {
+						    if (is_burning) {
+						        is_burning <- false;
+						        is_burned  <- true;
+						        color      <- COLOR_BURNED;
+						        world.burning_count <- world.burning_count - 1;
+						        world.burned_count  <- world.burned_count + 1;
+						    }
+						}
                     }
                 }
                 if (fires_count > 0) {
-                    write "💧 Helicóptero [" + name + "]: Descarga apagó " + fires_count + " celdas. Agua: " + int(carga_agua) + "L";
+                    write "Helicóptero [" + name + "]: Descarga apagó " + fires_count + " celdas. Agua: " + int(carga_agua) + "L";
                 }
             } else {
                 // Escaneo ampliado SOLO si el área inmediata está limpia
