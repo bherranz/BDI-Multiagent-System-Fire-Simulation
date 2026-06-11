@@ -20,6 +20,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	float prioridad_mision <- 4.0;
 	list<point> patrol_route <- []; // Registro de focos para retomar tras retirada
 	bool repostaje_notificado <- false;
+	float total_agua_gastada <- 0.0;
 
 	float max_agua_mision <- firefighter_max_water; // Atributo virtual
     

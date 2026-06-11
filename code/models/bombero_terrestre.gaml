@@ -302,6 +302,7 @@ species bombero_terrestre parent: agente_operativo {
                 float water_use <- 8.0 * (1.0 + (nivel_estres / firefighter_max_stress * 0.5));
                 if (carga_agua >= water_use) {
                     carga_agua <- carga_agua - water_use;
+                    total_agua_gastada <- total_agua_gastada + water_use;
 					ask fire_cell {
 					    if (is_burning) {
 					        is_burning <- false;
@@ -383,7 +384,8 @@ species bombero_terrestre parent: agente_operativo {
 			        loop fire_cell over: road_fires {
 			            float water_use <- 8.0 * (1.0 + (nivel_estres / firefighter_max_stress * 0.5));
 			            if (carga_agua >= water_use) {
-			                carga_agua           <- carga_agua - water_use;
+			                carga_agua <- carga_agua - water_use;
+			                total_agua_gastada <- total_agua_gastada + water_use;
 							ask fire_cell {
 							    if (is_burning) {
 							        is_burning <- false;
@@ -439,7 +441,8 @@ species bombero_terrestre parent: agente_operativo {
 		            loop fire_cell over: blocking_fires {
 		                float water_use <- 8.0 * (1.0 + (nivel_estres / firefighter_max_stress * 0.5));
 		                if (carga_agua >= water_use) {
-		                    carga_agua           <- carga_agua - water_use;
+		                    carga_agua <- carga_agua - water_use;
+		                    total_agua_gastada <- total_agua_gastada + water_use;
 							ask fire_cell {
 							    if (is_burning) {
 							        is_burning <- false;

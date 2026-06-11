@@ -52,10 +52,10 @@ species bombero_aereo parent: agente_operativo {
 
     // Protocolo 2: Evaluación de misión y negociación BDI
     action puede_aceptar_mision type: bool {
-	    float margen_agua   <- carga_agua - (aerial_firefighter_max_water * 0.2);
+	    float margen_agua   <- carga_agua - (aerial_firefighter_max_water * 0.15);
 	    float margen_fuel   <- nivel_combustible - (aerial_firefighter_max_fuel * 0.25);
 	    float margen_viento <- aerial_firefighter_wind_tolerance - wind_intensity;
-	    if (!(margen_agua > 0 and margen_fuel > 0 and margen_viento > 0.5)) {
+	    if (!(margen_agua > 0 and margen_fuel > 0 and margen_viento > 0)) {
 	        write "[Protocolo 2] Helicóptero [" + name + "]: REFUSE — (agua: " + int(carga_agua) + "L, fuel: " + int(nivel_combustible) + "L, viento: " + wind_intensity + ")";
 	        return false;
 	    }
@@ -256,18 +256,25 @@ species bombero_aereo parent: agente_operativo {
     }
 
     // Protocolos 5 y 7 unificados (Prioridad 5.0 y se borra la misión actual)
-    reflex evaluate_resources when: estado_operativo = "Extinguiendo" or estado_operativo = "En vuelo" {
-        if (carga_agua <= (aerial_firefighter_max_water * 0.15) and !has_desire(predicate(DESEO_RECARGAR_AGUA))) {
+    reflex evaluate_resources when: !(estado_operativo in ["Recargando", "Repostando", "Retirada"]) {
+        
+        // Prioridad Máxima: Combustible
+        if (nivel_combustible <= (aerial_firefighter_max_fuel * 0.25) and !has_desire(predicate(DESEO_REPOSTAR_COMBUSTIBLE))) {
+            estado_operativo <- "Repostando";
+            do remove_desire(predicate(DESEO_EXTINGUIR));
+            // Si por algún motivo tenía deseo de agua, lo borramos para que no interfiera
+            do remove_desire(predicate(DESEO_RECARGAR_AGUA)); 
+            
+            do add_desire(predicate(DESEO_REPOSTAR_COMBUSTIBLE), 6.0); 
+            write "Helicóptero [" + name + "]: Combustible crítico (" + int(nivel_combustible) + "L). Solicitando repostaje.";
+        }
+        
+        // Prioridad Secundaria: Agua
+        else if (carga_agua <= (aerial_firefighter_max_water * 0.15) and !has_desire(predicate(DESEO_RECARGAR_AGUA))) {
             estado_operativo <- "Recargando";
             do remove_desire(predicate(DESEO_EXTINGUIR));
             do add_desire(predicate(DESEO_RECARGAR_AGUA), 5.0); 
             write "Helicóptero [" + name + "]: Agua crítica (" + int(carga_agua) + "L). Necesita recarga.";
-        }
-        if (nivel_combustible <= (aerial_firefighter_max_fuel * 0.25) and !has_desire(predicate(DESEO_REPOSTAR_COMBUSTIBLE))) {
-            estado_operativo <- "Repostando";
-            do remove_desire(predicate(DESEO_EXTINGUIR)); 
-            do add_desire(predicate(DESEO_REPOSTAR_COMBUSTIBLE), 5.0); 
-            write "Helicóptero [" + name + "]: Combustible crítico (" + int(nivel_combustible) + "L). Solicitando repostaje.";
         }
     }
 
@@ -404,6 +411,7 @@ species bombero_aereo parent: agente_operativo {
                     float water_use <- 8.0;
                     if (carga_agua >= water_use) {
                         carga_agua <- carga_agua - water_use;
+                        total_agua_gastada <- total_agua_gastada + water_use;
                         fires_count <- fires_count + 1;
 						ask fire_cell {
 						    if (is_burning) {

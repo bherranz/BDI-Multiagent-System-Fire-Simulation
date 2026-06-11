@@ -28,11 +28,11 @@ global {
 
     // RF-07: Detectar extinción total, exportar log y pausar
     reflex check_extinction when: every(10 #cycles) and ciclo_extincion = -1 {
-        if (cycle > 100 and world.burning_count = 0) {
+        if (cycle > 50 and world.burning_count = 0) {
             ciclo_extincion <- cycle;
 
-            agua_total_terrestre <- sum(bombero_terrestre collect (firefighter_max_water      - each.carga_agua));
-            agua_total_aerea     <- sum(bombero_aereo     collect (aerial_firefighter_max_water - each.carga_agua));
+            agua_total_terrestre <- sum(bombero_terrestre collect (each.total_agua_gastada));
+			agua_total_aerea     <- sum(bombero_aereo     collect (each.total_agua_gastada));
 
             int   celdas_quemadas <- world.burned_count;
             float pct_quemado     <- (celdas_quemadas / float(length(terrain_cell))) * 100.0;

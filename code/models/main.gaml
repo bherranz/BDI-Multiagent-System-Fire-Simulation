@@ -84,9 +84,9 @@ global {
 
         list<geometry> road_geoms_2d <- (road as list) collect (line(each.shape.points collect ({each.x, each.y, 0.0})));
         // Limpiar el grafo para generar una red limpia
-        list<geometry> clean_roads <- clean_network(road_geoms_2d, 3.0, true, true);
-        
-        road_network     <- as_edge_graph(clean_roads) with_shortest_path_algorithm #Dijkstra;
+        //list<geometry> clean_roads <- clean_network(road_geoms_2d, 3.0, true, true);
+        //save clean_roads to: "../includes/carreteras_limpias.shp" format: "shp";
+        road_network     <- as_edge_graph(road_geoms_2d) with_shortest_path_algorithm #Dijkstra;
         drivable_network <- road_network;
     }
 

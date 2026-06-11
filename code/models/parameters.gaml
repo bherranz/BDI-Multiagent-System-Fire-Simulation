@@ -71,7 +71,7 @@ global {
 
     // --- SPATIAL FILES ---
     file dem_file <- file("../includes/dem_gredos.tif");
-    shape_file roads_file <- shape_file("../includes/roads.shp");
+    shape_file roads_file <- shape_file("../includes/carreteras_limpias.shp");
     shape_file fuel_file <- shape_file("../includes/fuel.shp");
     shape_file water_points_file <- shape_file("../includes/water_points.shp");
     shape_file base_file <- shape_file("../includes/base.shp");

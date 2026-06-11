@@ -5,6 +5,7 @@ code/includes/*.prj
 code/includes/*.tif
 code/includes/*.cpg
 code/includes/*.qmd
+code/includes/*.fix
 code/.project
 code/.settings/
 
