@@ -22,6 +22,7 @@ global {
 	int burned_count  <- 0;
 
     init {
+    	seed <- 10.0;
         write "Processing the map...";
         do create_gis_agents();
         do compute_spatial_relations();
@@ -92,7 +93,7 @@ global {
 
     action ignite_fire {
 	    logistics_base base <- one_of(logistics_base);
-	    float max_distance <- 4000.0; // radio máximo en metros desde la base
+	    float max_distance <- 5000.0; // radio máximo en metros desde la base
 	
 	    // Buscar celda con combustible alto dentro del radio
 	    list<terrain_cell> candidates <- terrain_cell where (
@@ -125,8 +126,10 @@ global {
 	    }
 	}
 	
-	reflex vary_wind when: every(50 #cycles) {
-	    wind_direction <- wind_direction + rnd(-15.0, 15.0);
-	    wind_intensity  <- max(0.5, min(5.0, wind_intensity + rnd(-0.3, 0.3)));
+	reflex vary_wind when: every(30 #cycles) {
+	    int r <- rnd(60);
+	    float delta <- (float(r) - 30.0) / 100.0;
+	    wind_direction <- wind_direction + (rnd(300) - 150) / 10.0;
+	    wind_intensity <- max(0.5, min(4.2, wind_intensity + delta));
 	}
 }

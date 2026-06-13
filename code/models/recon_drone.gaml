@@ -139,9 +139,33 @@ species recon_drone control: simple_bdi skills: [moving] {
 
         // Suspender si viento demasiado fuerte
         if (wind_intensity > wind_tolerance) {
-            write "Dron [" + name + "]: Viento fuerte (" + wind_intensity + "). Suspendiendo patrulla.";
-            return;
-        }
+		    logistics_base base <- logistics_base with_min_of (each distance_to self);
+		    float dist_base <- {location.x, location.y} distance_to {base.location.x, base.location.y};
+		
+		    if (dist_base > 50.0) {
+		        if (!has_belief(predicate(BASE_BELIEF))) {
+		            write "Dron [" + name + "]: Viento fuerte (" + wind_intensity +
+		                  " m/s). Retirando a base.";
+		            do add_belief(predicate(BASE_BELIEF));
+		        }
+		        do goto target: {base.location.x, base.location.y, location.z} speed: speed;
+		        if (every(5 #cycles)) {
+		            do scout_for_wildfire;
+		        }
+		
+		    } else {
+		        nivel_bateria <- nivel_bateria + 1.0;
+		        if (every(10 #cycles)) {
+		            write "Dron [" + name + "]: En tierra por viento (" + wind_intensity + " m/s).";
+		        }
+		    }
+		    return;
+		}
+		if (has_belief(predicate(BASE_BELIEF))) {
+		    write "Dron [" + name + "]: Viento normalizado (" + wind_intensity + 
+		          " m/s). Reanudando patrulla.";
+		    do remove_belief(predicate(BASE_BELIEF));
+		}
 
         // Seguir los waypoints de la ruta de patrulla
         if (!empty(patrol_route) and patrol_waypoint_index < length(patrol_route)) {
@@ -303,7 +327,7 @@ species recon_drone control: simple_bdi skills: [moving] {
 
             if (!has_belief(fire_belief)) {
                 do add_belief(fire_belief);
-                write "[Protocol 1] Dron [" + name + "]: Fire detected at " + fire_focus.location;
+                write "[Protocol 1] Dron [" + name + "]: Fuego detectado en " + fire_focus.location;
                 do trigger_reporting_protocol(fire_focus.location);
             }
         }
@@ -390,7 +414,7 @@ species recon_drone control: simple_bdi skills: [moving] {
                 ask b { bid <- calcular_puja(fire_location); }
                 if (bid < #max_float) {
                     bids[b] <- bid;
-                    write "   Propose [" + b.name + "]: coste=" + int(bid);
+                    write "   Proponer [" + b.name + "]: coste=" + int(bid);
                 }
             }
             loop b over: all_aerial {
@@ -398,7 +422,7 @@ species recon_drone control: simple_bdi skills: [moving] {
                 ask b { bid <- calcular_puja(fire_location); }
                 if (bid < #max_float) {
                     bids[b] <- bid;
-                    write "   Propose [" + b.name + "]: coste=" + int(bid);
+                    write "   Proponer [" + b.name + "]: coste=" + int(bid);
                 }
             }
 

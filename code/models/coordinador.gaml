@@ -29,7 +29,7 @@ species coordinador control: simple_bdi {
     }
     
     reflex collect_intelligence when: every(20 #cycles) {
-	    list<recon_drone> drones_in_range <- recon_drone where (each distance_to self < coverage_range);
+	    list<recon_drone> drones_in_range <- recon_drone at_distance coverage_range;
 	    list<point> new_fires <- [];
 	
 	    loop d over: drones_in_range {

@@ -20,13 +20,14 @@ global {
     float agua_total_terrestre <- 0.0;
     float agua_total_aerea     <- 0.0;
     int ciclo_extincion        <- -1;
+    string escenario_id <- "TEST-00";
+    int ejecucion_num <- 1;
 
     // Llamado por los agentes para registrar evacuaciones (P8)
     action registrar_evacuacion {
         total_evacuaciones <- total_evacuaciones + 1;
     }
 
-    // RF-07: Detectar extinción total, exportar log y pausar
     reflex check_extinction when: every(10 #cycles) and ciclo_extincion = -1 {
         if (cycle > 50 and world.burning_count = 0) {
             ciclo_extincion <- cycle;
@@ -39,7 +40,8 @@ global {
             string modelo         <- is_centralized_model ? "Centralizado" : "Descentralizado";
 
             write "==================================================";
-            write "SIMULACIÓN FINALIZADA — Modelo: " + modelo;
+            write "SIMULACIÓN FINALIZADA — Escenario: " + escenario_id + " | Ejecución: " + ejecucion_num;
+            write "Modelo:                    " + modelo;
             write "Ciclo de extinción total:  " + ciclo_extincion;
             write "Celdas quemadas:           " + celdas_quemadas + " (" + round(pct_quemado) + "% del mapa)";
             write "Focos detectados:          " + total_focos_detectados;
@@ -47,16 +49,25 @@ global {
             write "Agua — Terrestres: " + int(agua_total_terrestre) + "L | Aéreos: " + int(agua_total_aerea) + "L";
             write "==================================================";
 
-            string filename <- "resultados_" + modelo + "_ciclo" + ciclo_extincion + ".csv";
-            save ["modelo", "ciclo_extincion", "celdas_quemadas", "pct_quemado",
-                  "focos_detectados", "evacuaciones", "agua_terrestre_L", "agua_aerea_L"]
-                 to: filename format: "csv" rewrite: true;
-            save [modelo, ciclo_extincion, celdas_quemadas, round(pct_quemado),
-                  total_focos_detectados, total_evacuaciones,
-                  int(agua_total_terrestre), int(agua_total_aerea)]
-                 to: filename format: "csv" rewrite: false;
+            string filename <- "../results/registro_experimentos.csv";
+            bool is_new_file <- !file_exists(filename);
+            if (is_new_file) {
+                string headers <- "ID_Escenario;Ejecucion;Modelo;Ciclo_Extincion;Celdas_Quemadas;Pct_Quemado;Focos_Detectados;Evacuaciones;Agua_Terrestre_L;Agua_Aerea_L" + "\n";
+                save headers to: filename format: "string" rewrite: true;
+            }
 
-            write "Log exportado: " + filename;
+            string data_row <- escenario_id + ";" 
+                             + ejecucion_num + ";" 
+                             + modelo + ";" 
+                             + ciclo_extincion + ";" 
+                             + celdas_quemadas + ";" 
+                             + round(pct_quemado) + ";" 
+                             + total_focos_detectados + ";" 
+                             + total_evacuaciones + ";" 
+                             + int(agua_total_terrestre) + ";" 
+                             + int(agua_total_aerea) + "\n";
+            save data_row to: filename format: "string" rewrite: false;
+            write "Fila añadida al log maestro: " + filename;
             do pause;
         }
     }
@@ -64,6 +75,8 @@ global {
 
 // --- EXPERIMENTO CON TELEMETRÍA ---
 experiment Fire_Simulation type: gui {
+	parameter "ID Escenario"				  var: escenario_id  category: "Control de Experimento" init: "TEST-00";
+    parameter "Nº Ejecución"				  var: ejecucion_num category: "Control de Experimento" init: 1;
     parameter "Modelo Centralizado"           var: is_centralized_model                                    category: "Arquitectura de Agentes";
     parameter "Tamaño Flota Drones"           var: drone_fleet_size          min: 5   max: 20              category: "Arquitectura de Agentes";
     parameter "Tamaño Flota Terrestre"        var: firefighter_fleet_size    min: 2   max: 10              category: "Arquitectura de Agentes";
@@ -84,6 +97,7 @@ experiment Fire_Simulation type: gui {
         monitor "Bomberos disponibles" value: length(bombero_terrestre where (each.estado_operativo = "Disponible"));
         monitor "Helicópteros disp."   value: length(bombero_aereo     where (each.estado_operativo = "Disponible"));
         monitor "Drones en patrulla"   value: length(recon_drone       where (each.has_desire(predicate("patrol_area"))));
+        monitor "Intensidad viento"    value: wind_intensity;
 
         display "Gredos 3D Map" type: opengl {
             grid terrain_cell elevation: altitude triangulation: true;

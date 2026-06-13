@@ -81,10 +81,12 @@ species bombero_terrestre parent: agente_operativo {
                 }
             } else {
                 float broadcast_range <- 500.0;
-                list<bombero_terrestre> nearby_peers <- bombero_terrestre where (each != self and each distance_to self < broadcast_range);
+                list<bombero_terrestre> nearby_peers <- (bombero_terrestre at_distance broadcast_range) where (each != self);
+                list<bombero_aereo> nearby_aerial <- bombero_aereo at_distance broadcast_range;
                 ask nearby_peers {
                     do recibir_broadcast_estado(myself.foco_asignado, fire_state, progress);
                 }
+                ask nearby_aerial { do recibir_broadcast_estado(myself.foco_asignado, fire_state, progress); }
             }
         }
     }
@@ -92,7 +94,6 @@ species bombero_terrestre parent: agente_operativo {
     // Protocolo 4: Petición de refuerzos
     action request_reinforcements {
         if (refuerzos_pedidos) { return; }
-
 	    geometry search_zone <- circle(200.0) at_location {location.x, location.y};
 	    list<terrain_cell> nearby_fires <- (terrain_cell overlapping search_zone) where (each.is_burning);
 	    float fire_count <- float(length(nearby_fires));
@@ -105,12 +106,31 @@ species bombero_terrestre parent: agente_operativo {
                     do receive_reinforcement_request(myself, myself.foco_asignado, fire_count);
                 }
             } else {
-                float broadcast_range <- 500.0;
-                list<bombero_aereo> nearby_aerial <- bombero_aereo where (each distance_to self < broadcast_range);
-                list<bombero_terrestre> nearby_ground <- bombero_terrestre where (each != self and each distance_to self < broadcast_range);
-                
-                ask nearby_aerial { do request_mission(myself.foco_asignado); }
-                ask nearby_ground { do request_mission(myself.foco_asignado); }
+                float broadcast_range <- 2000.0;
+			    list<bombero_aereo>     nearby_aerial <- bombero_aereo at_distance broadcast_range;
+			    list<bombero_terrestre> nearby_ground <- (bombero_terrestre at_distance broadcast_range) where (each != self);
+			    list<bombero_terrestre> ground_disp <- nearby_ground where (each.estado_operativo = "Disponible");
+			    list<bombero_aereo>     aerial_disp <- nearby_aerial where (each.estado_operativo = "Disponible");
+			
+			    if (!empty(ground_disp) or !empty(aerial_disp)) {
+			        ask ground_disp { do request_mission(myself.foco_asignado); }
+			        ask aerial_disp { do request_mission(myself.foco_asignado); }
+			        write "[Protocolo 4 - P2P] Refuerzo solicitado a " + 
+			              length(ground_disp) + " terrestres y " + length(aerial_disp) + " aéreos disponibles.";
+			    } else {
+			        list<recon_drone> nearby_drones <- recon_drone at_distance broadcast_range;
+			        if (!empty(nearby_drones)) {
+			            ask nearby_drones {
+			                // El dron relanza el CNP en la zona del foco
+			                predicate fire_belief <- predicate("wildfire_detected", ["location"::myself.foco_asignado]);
+			                if (!has_belief(fire_belief)) {
+			                    do add_belief(fire_belief);
+			                    do trigger_reporting_protocol(myself.foco_asignado);
+			                }
+			            }
+			            write "[Protocolo 4 - P2P] Sin unidades disponibles. Dron relanza CNP en zona.";
+			        } else { write "[Protocolo 4 - P2P] Sin unidades ni drones en rango. Foco sin refuerzo."; }
+			    }
             }
             refuerzos_pedidos <- true;
         }
@@ -127,9 +147,9 @@ species bombero_terrestre parent: agente_operativo {
                 }
             } else {
                 float broadcast_range <- 600.0;
-                list<bombero_terrestre> nearby_ground <- bombero_terrestre where (each != self and each distance_to self < broadcast_range);
-                list<bombero_aereo> nearby_aerial <- bombero_aereo where (each distance_to self < broadcast_range);
-                list<recon_drone> nearby_drones <- recon_drone where (each distance_to self < broadcast_range);
+                list<bombero_aereo> nearby_aerial <- bombero_aereo at_distance broadcast_range;
+			    list<bombero_terrestre> nearby_ground <- (bombero_terrestre at_distance broadcast_range) where (each != self);
+			    list<recon_drone> nearby_drones <- recon_drone at_distance broadcast_range;
                 
                 ask nearby_drones {
                     if (!(myself.foco_asignado in patrol_route)) {
@@ -162,9 +182,9 @@ species bombero_terrestre parent: agente_operativo {
                 }
             } else {
                 float broadcast_range <- 600.0;
-                list<bombero_terrestre> nearby_ground <- bombero_terrestre where (each != self and each distance_to self < broadcast_range);
-                list<bombero_aereo> nearby_aerial <- bombero_aereo where (each distance_to self < broadcast_range);
-                list<recon_drone> nearby_drones <- recon_drone where (each distance_to self < broadcast_range);
+                list<bombero_aereo> nearby_aerial <- bombero_aereo at_distance broadcast_range;
+			    list<bombero_terrestre> nearby_ground <- (bombero_terrestre at_distance broadcast_range) where (each != self);
+			    list<recon_drone> nearby_drones <- recon_drone at_distance broadcast_range;
                 
                 ask nearby_drones {
                     if (!(myself.foco_asignado in patrol_route)) {
@@ -208,7 +228,7 @@ species bombero_terrestre parent: agente_operativo {
         // Critical stress protocol
         if (nivel_estres > (firefighter_max_stress * 0.8) and !has_desire(predicate(DESEO_SUPERVIVENCIA))) {
             do add_desire(predicate(DESEO_SUPERVIVENCIA), 6.0);
-            write "[Protocol 8] Bombero [" + name + "]: STRESS CRITICAL (" + int(nivel_estres) + "). Initiating retreat.";
+            write "[Protocol 8] Bombero [" + name + "]: ESTRÉS CRÍTICO (" + int(nivel_estres) + "). Iniciando retirada.";
         }
 
         // Critical water protocol
@@ -216,66 +236,90 @@ species bombero_terrestre parent: agente_operativo {
             estado_operativo <- "Recargando";
             do remove_desire(predicate(DESEO_EXTINGUIR)); 
             do add_desire(predicate(DESEO_RECARGAR_AGUA), 5.0); 
-            write "[Protocol 5] Bombero [" + name + "]: Water critical (" + int(carga_agua) + "L). Heading to recharge.";
+            write "[Protocol 5] Bombero [" + name + "]: Agua crítica (" + int(carga_agua) + "L). Dirigiéndose a recargar.";
         }
     }
 
     // --- COGNITIVE PLANS ---
 
-    plan tactical_retreat intention: predicate(DESEO_SUPERVIVENCIA) {
-        if (!emergencia_notificada) {
-            do emergency_evacuation_protocol;
-            foco_asignado <- nil; 
-            emergencia_notificada <- true;
-        }
+	plan tactical_retreat intention: predicate(DESEO_SUPERVIVENCIA) {
+	    if (!emergencia_notificada) {
+	        do emergency_evacuation_protocol;
+	        foco_asignado <- nil;
+	        emergencia_notificada <- true;
+	    }
+	    logistics_base safe_zone <- logistics_base with_min_of (each distance_to self);
+	    do move_hybrid(safe_zone.location);
+	
+	    if ({location.x, location.y} distance_to {safe_zone.location.x, safe_zone.location.y} < 50.0) {
+	        nivel_estres <- 0.0;
+	        nivel_cansancio <- max(0.0, nivel_cansancio - 20.0);
+	        emergencia_notificada <- false;
+	        do remove_desire(predicate(DESEO_SUPERVIVENCIA));
+	        write "Bombero [" + name + "]: Llegada a zona segura. Estrés normalizado.";
+	        if (carga_agua <= (firefighter_max_water * 0.15)) {
+	            estado_operativo <- "Recargando";
+	            do add_desire(predicate(DESEO_RECARGAR_AGUA), 5.0);
+	            write "Bombero [" + name + "]: Agua crítica al llegar a base. Iniciando recarga.";
+	        } else {
+	            estado_operativo <- "Disponible";
+	        }
+	    }
+	}
 
-        logistics_base safe_zone <- logistics_base with_min_of (each distance_to self);
-        do move_hybrid(safe_zone.location);
-
-        if ({location.x, location.y} distance_to {safe_zone.location.x, safe_zone.location.y} < 50.0) {
-            nivel_estres <- 0.0;
-            estado_operativo <- "Disponible";
-            emergencia_notificada <- false; 
-            do remove_desire(predicate(DESEO_SUPERVIVENCIA));
-            write "Bombero [" + name + "]: Reached safe zone. Stress normalised.";
-        }
-    }
-
-    plan recharge_water intention: predicate(DESEO_RECARGAR_AGUA) {
-    if (!retirada_notificada) {
-        do notify_water_withdrawal;
-        retirada_notificada <- true;
-    }
-    
-    water_point nearest_water <- water_point with_min_of (each distance_to self);
-    if (nearest_water != nil) {
-        do move_hybrid(nearest_water.location);
-        
-        if ({location.x, location.y} distance_to {nearest_water.location.x, nearest_water.location.y} < 30.0) {
-            carga_agua <- firefighter_max_water;
-            retirada_notificada <- false;
-            do remove_desire(predicate(DESEO_RECARGAR_AGUA));
-            write "Bombero [" + name + "]: Depósito lleno.";
-            
-            // Retomar misión si el foco sigue activo
-            if (foco_asignado != nil) {
-                geometry check_zone <- circle(150.0) at_location foco_asignado;
-                bool still_burning <- !empty((terrain_cell overlapping check_zone) where (each.is_burning));
-                if (still_burning) {
-                    estado_operativo <- "Extinguiendo";
-                    focos_iniciales <- length((terrain_cell overlapping check_zone) where (each.is_burning));
-                    do add_desire(predicate(DESEO_EXTINGUIR), 4.0);
-                    write "Bombero [" + name + "]: Retomando misión en " + foco_asignado;
-                } else {
-                    foco_asignado <- nil;
-                    estado_operativo <- "Disponible";
-                }
-            } else {
-                estado_operativo <- "Disponible";
-            }
-        }
-    }
-}
+	plan recharge_water intention: predicate(DESEO_RECARGAR_AGUA) {
+	    if (!retirada_notificada) {
+	        do notify_water_withdrawal;
+	        retirada_notificada <- true;
+	    }
+	
+	    if (destino_recarga = nil) {
+	        water_point nearest_water <- water_point with_min_of (each distance_to self);
+	        if (nearest_water != nil) {
+	            destino_recarga <- nearest_water.location;
+	        } else {
+	            logistics_base base <- logistics_base with_min_of (each distance_to self);
+	            if (base != nil) { destino_recarga <- base.location; }
+	        }
+	    }
+	    if (destino_recarga != nil) {
+	        float dist_2d <- {location.x, location.y} distance_to {destino_recarga.x, destino_recarga.y};
+	
+	        if (dist_2d > 80.0) {
+	            do move_hybrid(destino_recarga);
+	        } else {
+	            location <- {
+	                location.x + (destino_recarga.x - location.x) * 0.3,
+	                location.y + (destino_recarga.y - location.y) * 0.3,
+	                location.z
+	            };
+	            do snap_to_terrain;
+	        }
+	        if (dist_2d < 50.0) {
+	            carga_agua <- firefighter_max_water;
+	            retirada_notificada <- false;
+	            destino_recarga <- nil;
+	            do remove_desire(predicate(DESEO_RECARGAR_AGUA));
+	            write "Bombero [" + name + "]: Depósito lleno.";
+	
+	            if (foco_asignado != nil) {
+	                geometry check_zone <- circle(150.0) at_location foco_asignado;
+	                bool still_burning <- !empty((terrain_cell overlapping check_zone) where (each.is_burning));
+	                if (still_burning) {
+	                    estado_operativo <- "Extinguiendo";
+	                    focos_iniciales <- length((terrain_cell overlapping check_zone) where (each.is_burning));
+	                    do add_desire(predicate(DESEO_EXTINGUIR), 4.0);
+	                    write "Bombero [" + name + "]: Retomando misión en " + foco_asignado;
+	                } else {
+	                    foco_asignado <- nil;
+	                    estado_operativo <- "Disponible";
+	                }
+	            } else {
+	                estado_operativo <- "Disponible";
+	            }
+	        }
+	    }
+	}
 
     plan extinguish_fire intention: predicate(DESEO_EXTINGUIR) {
         if (foco_asignado = nil) {
@@ -293,13 +337,13 @@ species bombero_terrestre parent: agente_operativo {
             return;
         }
     
-        // --- MODE 3: WITHIN EXTINCTION RADIUS (<50m) ---
-        geometry extinction_zone <- circle(50.0) at_location {location.x, location.y};
+        // --- MODE 3: WITHIN EXTINCTION RADIUS ---
+        geometry extinction_zone <- circle(firefighter_extinction_radius) at_location {location.x, location.y};
         list<terrain_cell> fires_to_extinguish <- (terrain_cell overlapping extinction_zone) where (each.is_burning);
     
         if (!empty(fires_to_extinguish)) {
             loop fire_cell over: fires_to_extinguish {
-                float water_use <- 8.0 * (1.0 + (nivel_estres / firefighter_max_stress * 0.5));
+                float water_use <- firefighter_water_use * (1.0 + (nivel_estres / firefighter_max_stress * 0.5));
                 if (carga_agua >= water_use) {
                     carga_agua <- carga_agua - water_use;
                     total_agua_gastada <- total_agua_gastada + water_use;
@@ -319,7 +363,7 @@ species bombero_terrestre parent: agente_operativo {
 		            break;
 		        }
             }
-            write "Bombero [" + name + "]: Extinguishing. Water: " + int(carga_agua) + "L";
+            write "Bombero [" + name + "]: Extinguiendo. Agua: " + int(carga_agua) + "L";
         } else {
 		    geometry extended_search <- circle(250.0) at_location {location.x, location.y};
 		    list<terrain_cell> more_fires <- (terrain_cell overlapping extended_search)
@@ -328,9 +372,9 @@ species bombero_terrestre parent: agente_operativo {
 		        foco_asignado <- (more_fires with_min_of (each distance_to self)).location;
 		        geometry new_zone <- circle(150.0) at_location foco_asignado;
 		        focos_iniciales <- length((terrain_cell overlapping new_zone) where (each.is_burning));
-		        write "Bombero [" + name + "]: Moving to next fire cluster at " + foco_asignado;
+		        write "Bombero [" + name + "]: Moviéndose al siguiente sector " + foco_asignado;
 		    } else {
-		        write "Bombero [" + name + "]: Sector secured.";
+		        write "Bombero [" + name + "]: Sector asegurado.";
 		        do notify_mission_completion;
 		    }
 		}
@@ -459,7 +503,7 @@ species bombero_terrestre parent: agente_operativo {
 		        }
 		    }
 		    // Sin agua suficiente o sin fuego apagable, buscar desvío
-		    write "Bombero [" + name + "]: Fire in route, searching alternative.";
+		    write "Bombero [" + name + "]: Fuego en ruta, buscando alternativa.";
 		    nivel_estres <- min(firefighter_max_stress, nivel_estres + 1.0);
 		    bool found_path <- false;
 		    loop offset over: [-45.0, 45.0, -90.0, 90.0] {
@@ -477,7 +521,7 @@ species bombero_terrestre parent: agente_operativo {
 		            break;
 		        }
 		    }
-		    if (!found_path) { write "Bombero [" + name + "]: Surrounded by fire, waiting."; }
+		    if (!found_path) { write "Bombero [" + name + "]: Rodeado de fuego. Esperando."; }
 		    do snap_to_terrain;
 		    return;
 		}

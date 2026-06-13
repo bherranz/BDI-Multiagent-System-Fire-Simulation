@@ -27,6 +27,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
     // --- VARIABLES INTERNAS DE CONTROL ---
     int focos_iniciales <- 0;
     float progreso_ultimo_reporte <- -1.0;
+	point destino_recarga <- nil;
     
     // Semáforos para evitar spam en las comunicaciones
     bool refuerzos_pedidos <- false;

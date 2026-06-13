@@ -86,10 +86,12 @@ species bombero_aereo parent: agente_operativo {
                 }
             } else {
                 float broadcast_range <- 800.0;
-                list<bombero_terrestre> nearby_peers <- bombero_terrestre where (each != self and each distance_to self < broadcast_range);
-                ask nearby_peers {
+                list<bombero_terrestre> nearby_ground <- bombero_terrestre at_distance broadcast_range;
+			    list<bombero_aereo> nearby_aerial <- (bombero_aereo at_distance broadcast_range) where (each != self);
+                ask nearby_ground {
                     do recibir_broadcast_estado(myself.foco_asignado, fire_state, progress);
                 }
+                ask nearby_aerial { do recibir_broadcast_estado(myself.foco_asignado, fire_state, progress); }
             }
         }
     }
@@ -110,12 +112,30 @@ species bombero_aereo parent: agente_operativo {
                     do receive_reinforcement_request(myself, myself.foco_asignado, fire_count);
                 }
             } else {
-                float broadcast_range <- 800.0; 
-                list<bombero_terrestre> nearby_ground <- bombero_terrestre where (each distance_to self < broadcast_range);
-                list<bombero_aereo> nearby_aerial <- bombero_aereo where (each != self and each distance_to self < broadcast_range);
-                
-                ask nearby_ground { do request_mission(myself.foco_asignado); }
-                ask nearby_aerial { do request_mission(myself.foco_asignado); }
+                float broadcast_range <- 2000.0;
+			    list<bombero_aereo>     nearby_aerial <- bombero_aereo at_distance broadcast_range;
+			    list<bombero_terrestre> nearby_ground <- (bombero_terrestre at_distance broadcast_range) where (each != self);
+			    list<bombero_terrestre> ground_disp <- nearby_ground where (each.estado_operativo = "Disponible");
+			    list<bombero_aereo>     aerial_disp <- nearby_aerial where (each.estado_operativo = "Disponible");
+			
+			    if (!empty(ground_disp) or !empty(aerial_disp)) {
+			        ask ground_disp { do request_mission(myself.foco_asignado); }
+			        ask aerial_disp { do request_mission(myself.foco_asignado); }
+			        write "📡 [Protocolo 4 - P2P] Refuerzo solicitado a " + 
+			              length(ground_disp) + " terrestres y " + length(aerial_disp) + " aéreos disponibles.";
+			    } else {
+			        list<recon_drone> nearby_drones <- recon_drone at_distance broadcast_range;
+			        if (!empty(nearby_drones)) {
+			            ask nearby_drones {
+			                predicate fire_belief <- predicate("wildfire_detected", ["location"::myself.foco_asignado]);
+			                if (!has_belief(fire_belief)) {
+			                    do add_belief(fire_belief);
+			                    do trigger_reporting_protocol(myself.foco_asignado);
+			                }
+			            }
+			            write "[Protocolo 4 - P2P] Sin unidades disponibles. Dron relanza CNP en zona.";
+			        } else { write "[Protocolo 4 - P2P] Sin unidades ni drones en rango. Foco sin refuerzo."; }
+			    }
             }
             refuerzos_pedidos <- true;
         }
@@ -131,9 +151,9 @@ species bombero_aereo parent: agente_operativo {
                 }
             } else {
                 float broadcast_range <- 1000.0;
-                list<bombero_aereo> nearby_aerial <- bombero_aereo where (each != self and each distance_to self < broadcast_range);
-                list<bombero_terrestre> nearby_ground <- bombero_terrestre where (each distance_to self < broadcast_range);
-                list<recon_drone> nearby_drones <- recon_drone where (each distance_to self < broadcast_range);
+				list<bombero_terrestre> nearby_ground <- bombero_terrestre at_distance broadcast_range;
+			    list<bombero_aereo> nearby_aerial <- (bombero_aereo at_distance broadcast_range) where (each != self);
+			    list<recon_drone> nearby_drones <- recon_drone at_distance broadcast_range;
                 
                 ask nearby_drones {
                     if (!(myself.foco_asignado in patrol_route)) {
@@ -163,9 +183,9 @@ species bombero_aereo parent: agente_operativo {
                 }
             } else {
                 float broadcast_range <- 1000.0;
-                list<bombero_aereo> nearby_aerial <- bombero_aereo where (each != self and each distance_to self < broadcast_range);
-                list<bombero_terrestre> nearby_ground <- bombero_terrestre where (each distance_to self < broadcast_range);
-                list<recon_drone> nearby_drones <- recon_drone where (each distance_to self < broadcast_range);
+				list<bombero_terrestre> nearby_ground <- bombero_terrestre at_distance broadcast_range;
+			    list<bombero_aereo> nearby_aerial <- (bombero_aereo at_distance broadcast_range) where (each != self);
+			    list<recon_drone> nearby_drones <- recon_drone at_distance broadcast_range;
                 
                 ask nearby_drones {
                     if (!(myself.foco_asignado in patrol_route)) {
@@ -197,9 +217,9 @@ species bombero_aereo parent: agente_operativo {
                 }
             } else {
                 float broadcast_range <- 1000.0;
-                list<bombero_aereo> nearby_aerial <- bombero_aereo where (each != self and each distance_to self < broadcast_range);
-                list<bombero_terrestre> nearby_ground <- bombero_terrestre where (each distance_to self < broadcast_range);
-                list<recon_drone> nearby_drones <- recon_drone where (each distance_to self < broadcast_range);
+				list<bombero_terrestre> nearby_ground <- bombero_terrestre at_distance broadcast_range;
+			    list<bombero_aereo> nearby_aerial <- (bombero_aereo at_distance broadcast_range) where (each != self);
+			    list<recon_drone> nearby_drones <- recon_drone at_distance broadcast_range;
                 
                 ask nearby_drones {
                     if (!(myself.foco_asignado in patrol_route)) {
@@ -292,14 +312,22 @@ species bombero_aereo parent: agente_operativo {
             do goto target: {safe_zone.location.x, safe_zone.location.y, safe_zone.location.z + 50.0} speed: speed;
             
             if ({location.x, location.y} distance_to {safe_zone.location.x, safe_zone.location.y} < 100.0) {
-                exposicion_viento <- 0.0;
-                estado_operativo <- "Disponible";
-                emergencia_notificada <- false;
-                do remove_desire(predicate(DESEO_SUPERVIVENCIA));
-                write "Helicóptero [" + name + "]: A salvo en base. Estado normalizado.";
-            }
-        }
-    }
+	            if (wind_intensity <= aerial_firefighter_wind_tolerance) {
+	                    exposicion_viento <- 0.0;
+	                    estado_operativo <- "Disponible";
+	                    emergencia_notificada <- false;
+	                    do remove_desire(predicate(DESEO_SUPERVIVENCIA));
+	                    write "Helicóptero [" + name + "]: Viento normalizado. A salvo en base y listo.";
+	                } else {
+	                    estado_operativo <- "Retirada";
+	                    if (int(cycle) mod 20 = 0) {
+	                        write "Helicóptero [" + name + "]: En base, protegido del viento (Viento: " + wind_intensity + ")";
+	                    }
+	                }
+	               
+	            }
+	        }
+	    }
 
     plan refuel_water intention: predicate(DESEO_RECARGAR_AGUA) {
         if (!retirada_notificada) {
@@ -307,13 +335,21 @@ species bombero_aereo parent: agente_operativo {
             retirada_notificada <- true;
         }
         
-        water_point nearest_water <- water_point with_min_of (each distance_to self);
-        if (nearest_water != nil) {
-            do goto target: {nearest_water.location.x, nearest_water.location.y, nearest_water.location.z + 50.0} speed: speed;
+        if (destino_recarga = nil) {
+            water_point nearest_water <- water_point with_min_of (each distance_to self);
+            if (nearest_water != nil) {
+                destino_recarga <- {nearest_water.location.x, nearest_water.location.y, nearest_water.location.z + 50.0};
+            }
+        }
+
+        // Viajar al destino
+        if (destino_recarga != nil) {
+            do goto target: destino_recarga speed: speed;
             
-            if ({location.x, location.y} distance_to {nearest_water.location.x, nearest_water.location.y} < 80.0) {
+            if ({location.x, location.y} distance_to {destino_recarga.x, destino_recarga.y} < 80.0) {
                 carga_agua <- aerial_firefighter_max_water;
                 retirada_notificada <- false;
+                destino_recarga <- nil;
                 do remove_desire(predicate(DESEO_RECARGAR_AGUA));
                 write "Helicóptero [" + name + "]: Carga de agua completada.";
 
@@ -326,7 +362,7 @@ species bombero_aereo parent: agente_operativo {
                         estado_operativo <- "En vuelo";
                         focos_iniciales <- length((terrain_cell overlapping check_zone) where (each.is_burning));
                         do add_desire(predicate(DESEO_EXTINGUIR), 4.5);
-                        write "🚁 Helicóptero [" + name + "]: Retomando misión tras recarga de agua en " + foco_asignado;
+                        write "Helicóptero [" + name + "]: Retomando misión tras recarga de agua en " + foco_asignado;
                     } else {
                         foco_asignado <- nil;
                         estado_operativo <- "Disponible";
@@ -343,26 +379,37 @@ species bombero_aereo parent: agente_operativo {
 	        do notify_fuel_refueling;
 	        repostaje_notificado <- true;
 	    }
-	    logistics_base target_base <- logistics_base with_min_of (each distance_to self);
-	    if (target_base != nil) {
-	        // Comprobación de capacidad
-	        list<bombero_aereo> ocupantes <- bombero_aereo where (
-	            each != self and 
+	    
+	    logistics_base target_base <- (destino_recarga = nil) 
+	        ? logistics_base with_min_of (each distance_to self)
+	        : logistics_base closest_to destino_recarga;
+
+	    if (destino_recarga = nil and target_base != nil) {
+	        destino_recarga <- {target_base.location.x, target_base.location.y, target_base.location.z + 50.0};
+	    }
+	    
+		if (destino_recarga != nil and target_base != nil) {
+	        // Comprobación de capacidad dinámica de slots usando el agente base
+	        list<bombero_aereo> ocupantes <- bombero_aereo where ( 
+	            each != self and  
 	            each.estado_operativo = "Repostando" and 
-	            each distance_to target_base < 100.0
+	            each distance_to target_base < 100.0 
 	        );
+	        
 	        if (length(ocupantes) >= target_base.capacidad) {
 	            write "[Protocolo 7] Base llena (" + length(ocupantes) + "/" + target_base.capacidad + " slots). [" + name + "] en patrón de espera.";
 	            do goto target: target_base.location speed: speed * 0.5;
 	            return;
 	        }
-	
-	        estado_operativo <- "Repostando";
-            do goto target: {target_base.location.x, target_base.location.y, target_base.location.z + 50.0} speed: speed;
-            
-            if ({location.x, location.y} distance_to {target_base.location.x, target_base.location.y} < 100.0) {
+	        
+			estado_operativo <- "Repostando";
+	        do goto target: destino_recarga speed: speed;
+	        
+	        if ({location.x, location.y} distance_to {destino_recarga.x, destino_recarga.y} < 100.0) {
                 nivel_combustible <- aerial_firefighter_max_fuel;
                 repostaje_notificado <- false;
+                destino_recarga <- nil;
+                
                 do remove_desire(predicate(DESEO_REPOSTAR_COMBUSTIBLE));
                 write "Helicóptero [" + name + "]: Repostaje de combustible completado.";
 

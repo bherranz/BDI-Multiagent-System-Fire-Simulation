@@ -19,10 +19,12 @@ global {
     
     // --- GROUND FIREFIGHTER (BOMBERO TERRESTRE) PARAMETERS ---
     int firefighter_fleet_size <- 5;            // Number of active ground units
-    float firefighter_speed <- 60.0;            // Base speed (slower than drones)
+    float firefighter_speed <- 90.0;            // Base speed
     float firefighter_max_water <- 4000.0;      // Maximum water load (liters)
     float firefighter_max_fatigue <- 100.0;     // Fatigue threshold
     float firefighter_max_stress <- 100.0;      // Stress threshold (survival trigger)
+    float firefighter_water_use <- 8.0;        // Water use (liters)
+    float firefighter_extinction_radius <- 100.0;
 
     // --- AERIAL FIREFIGHTER (BOMBERO AÉREO / HELICÓPTERO) PARAMETERS ---
     int aerial_firefighter_fleet_size <- 2;    // Number of active helicopters
@@ -31,12 +33,12 @@ global {
     float aerial_firefighter_max_fuel <- 500.0;       // Fuel autonomy (critical resource)
     float aerial_firefighter_cruise_altitude <- 200.0; // Flight altitude above terrain
     float aerial_firefighter_max_stress <- 100.0;     // Stress threshold
-    float aerial_firefighter_wind_tolerance <- 4.0;   // Max wind speed to operate
+    float aerial_firefighter_wind_tolerance <- 3.0;   // Max wind speed to operate
     
     int base_capacity <- 2;
 
     // --- FIRE EVOLUTION PARAMETERS ---
-    int cell_burn_duration <- 30;
+    int cell_burn_duration <- 60;
     float epsilon_base <- 0.01;
     
     // --- FUEL MAPPING CONSTANTS (SHP STRINGS) ---
@@ -48,11 +50,11 @@ global {
     string VEG_FIREBREAK <- "Cortafuegos";
 
     // --- FLAMMABILITY COEFFICIENTS ---
-    float COEF_HIGH <- 0.08;   // Forest
-    float COEF_MEDIUM <- 0.05;  // Scrub and shrubs
-    float COEF_LOW <- 0.03;    // Grasslands
+    float COEF_HIGH <- 0.06;   // Forest
+    float COEF_MEDIUM <- 0.04;  // Scrub and shrubs
+    float COEF_LOW <- 0.02;    // Grasslands
     float COEF_NULL <- 0.00;   // Firewalls
-    float COEF_BASE <- 0.04;   // Fallback
+    float COEF_BASE <- 0.03;   // Fallback
     
     // --- WIND ADVANCED PARAMETERS ---
     float wind_direction <- 45.0;
