@@ -1,8 +1,4 @@
-code/includes/*.shp
-code/includes/*.dbf
-code/includes/*.shx
-code/includes/*.prj
-code/includes/*.tif
+
 code/includes/*.cpg
 code/includes/*.qmd
 code/includes/*.fix
@@ -16,4 +12,3 @@ bin/
 Unclassified Models/
 *.built_in_models_*
 *.gama_application_workspace*
-*.csv

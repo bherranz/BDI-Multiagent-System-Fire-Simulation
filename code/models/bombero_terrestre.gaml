@@ -6,12 +6,10 @@
 
 model GredosBomberoTerrestre
 
-import "parameters.gaml"
-import "recon_drone.gaml"
-import "environment.gaml"
-import "infrastructure.gaml"
-import "main.gaml"
 import "agente_operativo.gaml"
+import "recon_drone.gaml"
+import "coordinador.gaml"
+import "main.gaml"
 
 species bombero_terrestre parent: agente_operativo {
 
@@ -139,7 +137,7 @@ species bombero_terrestre parent: agente_operativo {
     // Protocolo 5: Notificación de retirada para recargar agua
     action notify_water_withdrawal {
         if (foco_asignado != nil) {
-            write "[Protocolo 5] Bombero [" + name + "]: Inform(retiradaRecarga(foco=" + foco_asignado + "))";
+            ask world { do log_msg("[Protocolo 5] Bombero [" + myself.name + "]: Inform(retiradaRecarga(foco=" + string(myself.foco_asignado) + "))"); }
             
             if (is_centralized_model) {
                 ask one_of(coordinador) {
@@ -171,9 +169,9 @@ species bombero_terrestre parent: agente_operativo {
 
     // Protocolo 8: Evacuación de emergencia
     action emergency_evacuation_protocol {
-        write "[Protocolo 8] Bombero [" + name + "]: Inform(retiradaEmergencia(riesgo_crítico))";
+        ask world { do log_msg("[Protocolo 8] Bombero [" + myself.name + "]: Inform(retiradaEmergencia(riesgo_crítico))"); }
         estado_operativo <- "Retirada";
-        ask world { do registrar_evacuacion; }
+        total_evacuaciones <- total_evacuaciones + 1;
         
         if (foco_asignado != nil) {
             if (is_centralized_model) {
@@ -228,7 +226,7 @@ species bombero_terrestre parent: agente_operativo {
         // Critical stress protocol
         if (nivel_estres > (firefighter_max_stress * 0.8) and !has_desire(predicate(DESEO_SUPERVIVENCIA))) {
             do add_desire(predicate(DESEO_SUPERVIVENCIA), 6.0);
-            write "[Protocol 8] Bombero [" + name + "]: ESTRÉS CRÍTICO (" + int(nivel_estres) + "). Iniciando retirada.";
+            ask world { do log_msg("[Protocolo 8] Bombero [" + myself.name + "]: ESTRÉS CRÍTICO (" + int(myself.nivel_estres) + "). Iniciando retirada."); }
         }
 
         // Critical water protocol
@@ -236,7 +234,7 @@ species bombero_terrestre parent: agente_operativo {
             estado_operativo <- "Recargando";
             do remove_desire(predicate(DESEO_EXTINGUIR)); 
             do add_desire(predicate(DESEO_RECARGAR_AGUA), 5.0); 
-            write "[Protocol 5] Bombero [" + name + "]: Agua crítica (" + int(carga_agua) + "L). Dirigiéndose a recargar.";
+            ask world { do log_msg("[Protocolo 5] Bombero [" + myself.name + "]: Agua crítica (" + int(myself.carga_agua) + "L). Dirigiéndose a recargar."); }
         }
     }
 
@@ -256,7 +254,7 @@ species bombero_terrestre parent: agente_operativo {
 	        nivel_cansancio <- max(0.0, nivel_cansancio - 20.0);
 	        emergencia_notificada <- false;
 	        do remove_desire(predicate(DESEO_SUPERVIVENCIA));
-	        write "Bombero [" + name + "]: Llegada a zona segura. Estrés normalizado.";
+	        ask world { do log_msg("Bombero [" + myself.name + "]: Llegada a zona segura. Estrés normalizado."); }
 	        if (carga_agua <= (firefighter_max_water * 0.15)) {
 	            estado_operativo <- "Recargando";
 	            do add_desire(predicate(DESEO_RECARGAR_AGUA), 5.0);
@@ -300,16 +298,17 @@ species bombero_terrestre parent: agente_operativo {
 	            retirada_notificada <- false;
 	            destino_recarga <- nil;
 	            do remove_desire(predicate(DESEO_RECARGAR_AGUA));
-	            write "Bombero [" + name + "]: Depósito lleno.";
+	            ask world { do log_msg("Bombero [" + myself.name + "]: Depósito lleno."); }
 	
 	            if (foco_asignado != nil) {
 	                geometry check_zone <- circle(150.0) at_location foco_asignado;
 	                bool still_burning <- !empty((terrain_cell overlapping check_zone) where (each.is_burning));
 	                if (still_burning) {
+	                	do remove_desire(predicate(DESEO_RECARGAR_AGUA));
 	                    estado_operativo <- "Extinguiendo";
 	                    focos_iniciales <- length((terrain_cell overlapping check_zone) where (each.is_burning));
 	                    do add_desire(predicate(DESEO_EXTINGUIR), 4.0);
-	                    write "Bombero [" + name + "]: Retomando misión en " + foco_asignado;
+	                    ask world { do log_msg("Bombero [" + myself.name + "]: Retomando misión en " + string(myself.foco_asignado)); }
 	                } else {
 	                    foco_asignado <- nil;
 	                    estado_operativo <- "Disponible";
@@ -352,8 +351,8 @@ species bombero_terrestre parent: agente_operativo {
 					        is_burning <- false;
 					        is_burned  <- true;
 					        color      <- COLOR_BURNED;
-					        world.burning_count <- world.burning_count - 1;
-					        world.burned_count  <- world.burned_count + 1;
+					        burning_count <- burning_count - 1;
+					        burned_count  <- burned_count + 1;
 					    }
 					}
                 } else {
@@ -363,7 +362,7 @@ species bombero_terrestre parent: agente_operativo {
 		            break;
 		        }
             }
-            write "Bombero [" + name + "]: Extinguiendo. Agua: " + int(carga_agua) + "L";
+            ask world { do log_msg("Bombero [" + myself.name + "]: Extinguiendo. Agua: " + int(myself.carga_agua) + "L"); }
         } else {
 		    geometry extended_search <- circle(250.0) at_location {location.x, location.y};
 		    list<terrain_cell> more_fires <- (terrain_cell overlapping extended_search)
@@ -435,8 +434,8 @@ species bombero_terrestre parent: agente_operativo {
 							        is_burning <- false;
 							        is_burned  <- true;
 							        color      <- COLOR_BURNED;
-							        world.burning_count <- world.burning_count - 1;
-							        world.burned_count  <- world.burned_count + 1;
+							        burning_count <- burning_count - 1;
+							        burned_count  <- burned_count + 1;
 							    }
 							}
 			            }
@@ -445,6 +444,7 @@ species bombero_terrestre parent: agente_operativo {
 			        return;
 			    }
 			    location <- {location.x, location.y, 0.0};
+			    ask world { do log_msg("Bombero [" + myself.name + "]: Circulando por carretera hacia el foco."); }
                 do goto target: target_2d on: drivable_network speed: speed * 1.2;
                 do snap_to_terrain;
                 return;
@@ -492,8 +492,8 @@ species bombero_terrestre parent: agente_operativo {
 							        is_burning <- false;
 							        is_burned  <- true;
 							        color      <- COLOR_BURNED;
-							        world.burning_count <- world.burning_count - 1;
-							        world.burned_count  <- world.burned_count + 1;
+							        burning_count <- burning_count - 1;
+							        burned_count  <- burned_count + 1;
 							    }
 							}
 		                }

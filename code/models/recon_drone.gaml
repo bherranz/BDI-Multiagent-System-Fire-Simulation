@@ -9,8 +9,7 @@ import "parameters.gaml"
 import "environment.gaml"
 import "infrastructure.gaml"
 import "coordinador.gaml"
-import "bombero_terrestre.gaml"
-import "bombero_aereo.gaml"
+import "metrics.gaml"
 
 species recon_drone control: simple_bdi skills: [moving] {
 
@@ -74,7 +73,7 @@ species recon_drone control: simple_bdi skills: [moving] {
 	        ask p {
 	            loop pred_fuego over: focos_nuevos {
 	                do add_belief(pred_fuego);
-	                write "[GOSSIP] Dron [" + name + "] recibe creencia de fuego.";
+	                ask world { do log_msg("[GOSSIP] Dron [" + myself.name + "] recibe creencia de fuego."); }
 	                
 	                if (!is_centralized_model) {
 	                    point fire_loc <- point(pred_fuego.values["location"]);
@@ -327,7 +326,7 @@ species recon_drone control: simple_bdi skills: [moving] {
 
             if (!has_belief(fire_belief)) {
                 do add_belief(fire_belief);
-                write "[Protocol 1] Dron [" + name + "]: Fuego detectado en " + fire_focus.location;
+                ask world { do log_msg("[Protocolo 1] Dron [" + myself.name + "]: Fuego detectado en " + string(fire_focus.location)); }
                 do trigger_reporting_protocol(fire_focus.location);
             }
         }
@@ -350,9 +349,7 @@ species recon_drone control: simple_bdi skills: [moving] {
         total_focos_detectados <- total_focos_detectados + 1;
 
         if (is_centralized_model) {
-		    write "[Protocolo 1] Inform(focoDetectado(pos=" + fire_location
-		        + ", intensidad=" + fire_intensity
-		        + ", combustible=" + fuel_available + ")) → Coordinador";
+		    ask world { do log_msg("[Protocolo 1] Inform(focoDetectado(pos=" + string(fire_location) + ", intensidad=" + fire_intensity + ", combustible=" + fuel_available + ")) → Coordinador"); }
 		    if (!empty(coordinador)) {
 		        coordinador coord <- one_of(coordinador);
 		        if ((self distance_to coord) <= coord.coverage_range) {
@@ -392,12 +389,12 @@ species recon_drone control: simple_bdi skills: [moving] {
                 !(empty(bombero_aereo     where (each.foco_asignado != nil and each.foco_asignado distance_to fire_location < 150.0)));
 
             if (already_covered) {
-                write "[Protocolo 2 - CNP] Foco en " + fire_location + " ya cubierto. Ignorando.";
+                ask world { do log_msg("[Protocolo 2 - CNP] Foco en " + string(fire_location) + " ya cubierto. Ignorando."); }
                 return;
             }
 
             // --- CONTRACT NET PROTOCOL (Modelo Descentralizado) ---
-            write "[Protocolo 2 - CNP] Dron [" + name + "]: CFP(proponerMision(" + fire_location + ")) → broadcast";
+            ask world { do log_msg("[Protocolo 2 - CNP] Dron [" + myself.name + "]: CFP(proponerMision(" + string(fire_location) + ")) → broadcast"); }
 			// Activar vigilancia de la zona tras reportar
 			zona_vigilada <- fire_location;
 			ciclos_vigilando <- 0;
@@ -414,7 +411,7 @@ species recon_drone control: simple_bdi skills: [moving] {
                 ask b { bid <- calcular_puja(fire_location); }
                 if (bid < #max_float) {
                     bids[b] <- bid;
-                    write "   Proponer [" + b.name + "]: coste=" + int(bid);
+                    ask world { do log_msg("   Proponer [" + b.name + "]: coste=" + int(bid)); }
                 }
             }
             loop b over: all_aerial {
@@ -422,32 +419,32 @@ species recon_drone control: simple_bdi skills: [moving] {
                 ask b { bid <- calcular_puja(fire_location); }
                 if (bid < #max_float) {
                     bids[b] <- bid;
-                    write "   Proponer [" + b.name + "]: coste=" + int(bid);
+                    ask world { do log_msg("   Proponer [" + b.name + "]: coste=" + int(bid)); }
                 }
             }
 
             // Fase 2: selección del ganador con menor coste
             if (empty(bids)) {
-                write "[Protocolo 2 - CNP] Sin candidatos válidos para foco en " + fire_location;
+                ask world { do log_msg("[Protocolo 2 - CNP] Sin candidatos válidos para foco en " + string(fire_location)); }
             } else {
                 agent winner <- bids.keys with_min_of (bids[each]);
-                write "[Protocolo 2 - CNP] Ganador: [" + winner.name + "] con coste=" + int(bids[winner]);
+                ask world { do log_msg("[Protocolo 2 - CNP] Ganador: [" + winner.name + "] con coste=" + int(bids[winner])); }
 
                 // Fase 3: Accept-Proposal al ganador, Reject-Proposal al resto
                 if (winner is bombero_terrestre) {
                     ask bombero_terrestre(winner) {
-                        write "Accept-Proposal(aceptarCompromiso(" + fire_location + ")) → [" + name + "]";
+                        ask world { do log_msg("Accept-Proposal(aceptarCompromiso(" + string(fire_location) + ")) → [" + myself.name + "]"); }
                         do request_mission(fire_location);
                     }
                 } else if (winner is bombero_aereo) {
                     ask bombero_aereo(winner) {
-                        write "Accept-Proposal(aceptarCompromiso(" + fire_location + ")) → [" + name + "]";
+                        ask world { do log_msg("Accept-Proposal(aceptarCompromiso(" + string(fire_location) + ")) → [" + myself.name + "]"); }
                         do request_mission(fire_location);
                     }
                 }
 
                 loop loser over: bids.keys where (each != winner) {
-                    write "Reject-Proposal(aceptarCompromiso(" + fire_location + ")) → [" + loser.name + "]";
+                    ask world { do log_msg("Reject-Proposal(aceptarCompromiso(" + string(fire_location) + ")) → [" + loser.name + "]"); }
                 }
             }
         }

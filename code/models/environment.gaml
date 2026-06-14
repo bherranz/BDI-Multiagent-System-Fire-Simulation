@@ -5,7 +5,6 @@
 model GredosEnvironment
 
 import "parameters.gaml"
-import "main.gaml"
 
 // --- CELLULAR AUTOMATION (TERRAIN) ---
 grid terrain_cell file: dem_file {
@@ -50,7 +49,7 @@ grid terrain_cell file: dem_file {
                     if (!is_burning) {
                         is_burning <- true;
                         color      <- COLOR_BURNING;
-                        world.burning_count <- world.burning_count + 1;
+                        burning_count <- burning_count + 1;
                     }
                 }
             }
@@ -63,8 +62,8 @@ grid terrain_cell file: dem_file {
             is_burning <- false;
             is_burned  <- true;
             color      <- COLOR_BURNED;
-            world.burning_count <- world.burning_count - 1;
-            world.burned_count  <- world.burned_count + 1;
+            burning_count <- burning_count - 1;
+            burned_count  <- burned_count + 1;
         }
     }
 }

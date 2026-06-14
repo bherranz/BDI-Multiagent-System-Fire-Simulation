@@ -21,6 +21,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	list<point> patrol_route <- []; // Registro de focos para retomar tras retirada
 	bool repostaje_notificado <- false;
 	float total_agua_gastada <- 0.0;
+	action lm(string msg) { write msg; log_buffer <- log_buffer + [msg]; }
 
 	float max_agua_mision <- firefighter_max_water; // Atributo virtual
     
@@ -53,6 +54,8 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	    return false; // Base siempre rechaza, los hijos sobreescriben
 	}
 	
+	
+	
     // --- ACCIONES COMUNES ---
 	// Protocolo 2: Acción unificada de aceptación de misión
 	action request_mission(point target_location) {
@@ -60,7 +63,8 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	    ask self { puede <- puede_aceptar_mision(); }
 	    
 	    if (puede) {
-	        write "[Protocolo 2] " + name + ": AGREE — Aceptando misión en " + target_location;
+	        do lm("[Protocolo 2] " + name + ": AGREE — Aceptando misión en " + string(target_location));
+
 	        foco_asignado <- target_location;
 	        foco_original <- target_location;
 	        geometry initial_zone <- circle(radio_mision) at_location target_location;
@@ -83,7 +87,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	            }
 	        }
 	    } else {
-	        write "[Protocolo 2] " + name + ": REFUSE";
+	        do lm("[Protocolo 2] " + name + ": REFUSE");
 	    }
 	}
     
@@ -97,7 +101,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	        // Usar mapa local si tiene datos
 	        point foco_cercano <- creencias_focos_local.keys with_min_of (each distance_to self);
 	        if (creencias_focos_local[foco_cercano] = "activo") {
-	            write "[RNF-04] " + name + ": Fuera de rango. Actuando con mapa local → " + foco_cercano;
+	            do lm("[RNF-04] " + name + ": Fuera de rango. Actuando con mapa local → " + string(foco_cercano));
 	            do request_mission(foco_cercano);
 	        }
 	    } else {
@@ -106,7 +110,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	            (each.is_burning and each distance_to self < 2000.0);
 	        if (!empty(visible)) {
 	            point foco_cercano <- (visible with_min_of (each distance_to self)).location;
-	            write "[RNF-04] " + name + ": Fuera de rango. Percepción directa → " + foco_cercano;
+	            do lm("[RNF-04] " + name + ": Fuera de rango. Percepción directa → " + string(foco_cercano));
 	            do request_mission(foco_cercano);
 	        }
 	    }
@@ -146,7 +150,7 @@ species agente_operativo control: simple_bdi skills: [moving] {
 	    }
 	
 	    // Protocolo 9: notificar finalización
-	    write "[Protocolo 9] " + name + ": Inform(misionCompletada(foco=" + finished_target + "))";
+	    do lm("[Protocolo 9] " + name + ": Inform(misionCompletada(foco=" + string(finished_target) + "))");
 	    if (is_centralized_model) {
 	        if (!empty(coordinador)) {
 	            coordinador coord <- one_of(coordinador);

@@ -40,6 +40,27 @@ global {
     // --- FIRE EVOLUTION PARAMETERS ---
     int cell_burn_duration <- 60;
     float epsilon_base <- 0.01;
+	
+	// Variables de métricas globales
+	int    ciclo_extincion       <- -1;
+	int    total_focos_detectados <- 0;
+	int    total_evacuaciones     <- 0;
+	float  agua_total_terrestre   <- 0.0;
+	float  agua_total_aerea       <- 0.0;
+	int    burning_count          <- 0;
+	int    burned_count           <- 0;
+	string escenario_id           <- "TEST-00";
+	int    ejecucion_num          <- 1;
+	
+	// --- LOG FUNCIONAL ---
+	list<string> log_buffer <- [];
+	string id_prueba <- "PF-001";
+	string tipo_ejecucion <- "FUNCIONAL" among: ["FUNCIONAL", "EXPERIMENTAL"];
+	
+	action log_msg(string msg) {
+	    write msg;
+	    log_buffer <- log_buffer + [msg];
+	}
     
     // --- FUEL MAPPING CONSTANTS (SHP STRINGS) ---
     string VEG_FOREST <- "Bosque";
@@ -73,7 +94,7 @@ global {
 
     // --- SPATIAL FILES ---
     file dem_file <- file("../includes/dem_gredos.tif");
-    shape_file roads_file <- shape_file("../includes/carreteras_limpias.shp");
+    shape_file roads_file <- shape_file("../includes/roads.shp");
     shape_file fuel_file <- shape_file("../includes/fuel.shp");
     shape_file water_points_file <- shape_file("../includes/water_points.shp");
     shape_file base_file <- shape_file("../includes/base.shp");

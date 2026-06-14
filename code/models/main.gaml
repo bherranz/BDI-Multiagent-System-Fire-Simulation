@@ -18,11 +18,8 @@ global {
     geometry shape <- envelope(dem_file);
     graph road_network;
     graph drivable_network; // Red transitable
-    int burning_count <- 0;
-	int burned_count  <- 0;
 
     init {
-    	seed <- 10.0;
         write "Processing the map...";
         do create_gis_agents();
         do compute_spatial_relations();
@@ -85,15 +82,15 @@ global {
 
         list<geometry> road_geoms_2d <- (road as list) collect (line(each.shape.points collect ({each.x, each.y, 0.0})));
         // Limpiar el grafo para generar una red limpia
-        //list<geometry> clean_roads <- clean_network(road_geoms_2d, 3.0, true, true);
+        list<geometry> clean_roads <- clean_network(road_geoms_2d, 3.0, true, true);
         //save clean_roads to: "../includes/carreteras_limpias.shp" format: "shp";
-        road_network     <- as_edge_graph(road_geoms_2d) with_shortest_path_algorithm #Dijkstra;
+        road_network     <- as_edge_graph(clean_roads) with_shortest_path_algorithm #Dijkstra;
         drivable_network <- road_network;
     }
 
     action ignite_fire {
 	    logistics_base base <- one_of(logistics_base);
-	    float max_distance <- 5000.0; // radio máximo en metros desde la base
+	    float max_distance <- 8000.0; // radio máximo en metros desde la base
 	
 	    // Buscar celda con combustible alto dentro del radio
 	    list<terrain_cell> candidates <- terrain_cell where (
@@ -112,9 +109,6 @@ global {
 	            color      <- COLOR_BURNING;
 	            world.burning_count <- world.burning_count + 1;
 	        }
-	        write "Incendio iniciado en " + ignition_cell.location
-	            + " (combustible: " + ignition_cell.fuel_factor
-	            + ", distancia a base: " + int(ignition_cell distance_to base) + "m)";
 	    } else {
 	        write "No se encontró celda válida en radio de " + max_distance + "m. Ampliando búsqueda...";
 	        // Fallback sin restricción de distancia
