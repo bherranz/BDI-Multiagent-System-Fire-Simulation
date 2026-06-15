@@ -11,7 +11,9 @@ El simulador está desarrollado sobre **GAMA Platform (GAML)** e integra de form
 A continuación se muestra una grabación de la simulación en ejecución dentro de GAMA Platform, donde se puede observar el comportamiento autónomo de las unidades en un renderizado 3D sobre el relieve real de la Sierra de Gredos, la propagación dinámica del fuego mediante un autómata celular adaptado a la pendiente y el viento, y el flujo de los protocolos de coordinación:
 
 
-![Demostración del Sistema Multiagente](code/includes/simulacion.gif)
+<p align="center">
+  <img src="code/includes/simulacion.gif" alt="Demostración del Sistema Multiagente" width="50%" />
+</p>
 ---
 
 ## 🤖 Representación de Agentes en la Simulación
